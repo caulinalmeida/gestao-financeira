@@ -31,7 +31,6 @@ function uid(){return Math.random().toString(36).slice(2,9);}
 
 // ── Google Auth ───────────────────────────────────────────────────────────────
 let tokenClient=null;
-let accessToken=null;
 
 function loadGsiScript(){
   return new Promise(res=>{
@@ -43,21 +42,37 @@ function loadGsiScript(){
   });
 }
 
+function getStoredToken(){
+  try{
+    const t=sessionStorage.getItem("gf_token");
+    const exp=sessionStorage.getItem("gf_token_exp");
+    if(t&&exp&&Date.now()<parseInt(exp)) return t;
+  }catch(e){}
+  return null;
+}
+
+function storeToken(token){
+  try{
+    sessionStorage.setItem("gf_token",token);
+    sessionStorage.setItem("gf_token_exp",String(Date.now()+3500*1000));
+  }catch(e){}
+}
+
 async function getToken(forceConsent=false){
   await loadGsiScript();
+  const stored=getStoredToken();
+  if(stored&&!forceConsent) return stored;
   return new Promise((res,rej)=>{
     if(!tokenClient){
       tokenClient=window.google.accounts.oauth2.initTokenClient({
         client_id:CLIENT_ID,scope:SCOPES,
         callback:resp=>{
           if(resp.error){rej(resp.error);return;}
-          accessToken=resp.access_token;
-          setTimeout(()=>{accessToken=null;},3500*1000);
-          res(accessToken);
+          storeToken(resp.access_token);
+          res(resp.access_token);
         }
       });
     }
-    if(accessToken&&!forceConsent){res(accessToken);return;}
     tokenClient.requestAccessToken({prompt:forceConsent?"consent":""});
   });
 }
@@ -207,7 +222,7 @@ export default function App(){
   const [modal,setModal]=useState(null);
   const [pago,setPago]=useState({});
   const [faturaLixo,setFaturaLixo]=useState(null);
-  const [authStatus,setAuthStatus]=useState("idle");
+  const [authStatus,setAuthStatus]=useState(()=>getStoredToken()?"ok":"idle");
   const [syncStatus,setSyncStatus]=useState("");
   const fileRef=useRef();
   const syncTimer=useRef(null);
@@ -224,7 +239,9 @@ export default function App(){
   const mesesComDados=Object.keys(dadosMes);
   const vPessoa=(v,dono,pessoa)=>dono==="Dividido"?v/2:dono===pessoa?v:0;
 
-  const handleLogin=async()=>{
+  useEffect(()=>{
+    if(authStatus==="ok") loadAllData();
+  },[authStatus]);
     setAuthStatus("loading");
     try{
       await getToken(true);
@@ -241,15 +258,24 @@ export default function App(){
     try{
       const dictRows=await sheetsGet("DICIONARIO!A2:D");
       if(dictRows.length) setDict(dictRows.filter(r=>r[0]).map(rowToDict));
+
       const rdRows=await sheetsGet("RENDA_DESPESAS!A2:H");
       const byMesRD={};
       rdRows.filter(r=>r[0]).forEach(row=>{
         const mes=row[0].toUpperCase();
-        if(!byMesRD[mes]) byMesRD[mes]={contas:[],investimentos:[]};
-        const c=rowToConta(row);
-        if((row[5]||"").toUpperCase()==="INVESTIMENTO") byMesRD[mes].investimentos.push(c);
-        else byMesRD[mes].contas.push(c);
+        if(!byMesRD[mes]) byMesRD[mes]={contas:[]};
+        byMesRD[mes].contas.push(rowToConta(row));
       });
+
+      // Investimentos em aba separada
+      const invRows=await sheetsGet("INVESTIMENTOS!A2:E");
+      const byMesInv={};
+      invRows.filter(r=>r[0]).forEach(row=>{
+        const mes=row[0].toUpperCase();
+        if(!byMesInv[mes]) byMesInv[mes]=[];
+        byMesInv[mes].push({id:uid(),descricao:row[1]||"",valor:String(parseBRL(row[2])),dono:row[3]||"Caulin",obs:row[4]||""});
+      });
+
       const ccRows=await sheetsGet("CARTAO_CREDITO!A2:J");
       const byMesCC={};
       ccRows.filter(r=>r[0]).forEach(row=>{
@@ -257,10 +283,16 @@ export default function App(){
         if(!byMesCC[mes]) byMesCC[mes]=[];
         byMesCC[mes].push(rowToFatura(row));
       });
-      const allMeses=new Set([...Object.keys(byMesRD),...Object.keys(byMesCC)]);
+
+      const allMeses=new Set([...Object.keys(byMesRD),...Object.keys(byMesInv),...Object.keys(byMesCC)]);
       const novo={};
       allMeses.forEach(mes=>{
-        novo[mes]={contas:(byMesRD[mes]?.contas)||[],investimentos:(byMesRD[mes]?.investimentos)||[],fatura:(byMesCC[mes])||[],manual:[]};
+        novo[mes]={
+          contas:(byMesRD[mes]?.contas)||[],
+          investimentos:(byMesInv[mes])||[],
+          fatura:(byMesCC[mes])||[],
+          manual:[],
+        };
       });
       setDadosMes(novo);
       if(allMeses.size>0){
@@ -270,6 +302,7 @@ export default function App(){
       setSyncStatus("salvo ✓");
       setTimeout(()=>setSyncStatus(""),2500);
     }catch(e){
+      console.error(e);
       setSyncStatus("erro ao carregar");
     }
   };
@@ -281,19 +314,27 @@ export default function App(){
       setSyncStatus("salvando...");
       try{
         if(field!=="dict"){
+          // Cartão
           await sheetsClear("CARTAO_CREDITO!A2:J");
           const ccRows=[];
           Object.entries(dadosMesAtual).forEach(([m,d])=>{
             [...(d.fatura||[]),...(d.manual||[])].forEach(r=>ccRows.push(faturaToRow(m,r)));
           });
           if(ccRows.length) await sheetsAppend("CARTAO_CREDITO!A2",ccRows);
+          // Contas
           await sheetsClear("RENDA_DESPESAS!A2:H");
           const rdRows=[];
           Object.entries(dadosMesAtual).forEach(([m,d])=>{
             (d.contas||[]).forEach(r=>rdRows.push(contaToRow(m,r)));
-            (d.investimentos||[]).forEach(r=>rdRows.push(contaToRow(m,{...r,transacao:r.descricao,tipo:"INVESTIMENTO",parcelas:"RECORRENTE"})));
           });
           if(rdRows.length) await sheetsAppend("RENDA_DESPESAS!A2",rdRows);
+          // Investimentos em aba separada
+          await sheetsClear("INVESTIMENTOS!A2:E");
+          const invRows=[];
+          Object.entries(dadosMesAtual).forEach(([m,d])=>{
+            (d.investimentos||[]).forEach(r=>invRows.push([m,r.descricao,String(parseBRL(r.valor)),r.dono,r.obs||""]));
+          });
+          if(invRows.length) await sheetsAppend("INVESTIMENTOS!A2",invRows);
         }
         if(field==="dict"||field==="all"){
           await sheetsClear("DICIONARIO!A2:D");
@@ -367,12 +408,15 @@ export default function App(){
   const addI=()=>withSync(setInvest,"investimentos")([...invest,{id:uid(),descricao:"",valor:"",dono:"Caulin",obs:""}]);
 
   const handleCopyImport=data=>{
-    const nc=data.contas?.length?[...contas,...data.contas]:contas;
-    const ni=data.investimentos?.length?[...invest,...data.investimentos]:invest;
-    const nm=data.manual?.length?[...manual,...data.manual]:manual;
-    setContas(nc);setInvest(ni);setManual(nm);
-    const novosDados={...dadosMes,[mesRef]:{...getMes(mesRef),contas:nc,investimentos:ni,manual:nm}};
-    syncAll(novosDados,dict,"all");
+    setDadosMes(prev=>{
+      const mesAtual=prev[mesRef]||{fatura:[],manual:[],contas:[],investimentos:[]};
+      const nc=data.contas?.length?[...mesAtual.contas,...data.contas]:mesAtual.contas;
+      const ni=data.investimentos?.length?[...mesAtual.investimentos,...data.investimentos]:mesAtual.investimentos;
+      const nm=data.manual?.length?[...mesAtual.manual,...data.manual]:mesAtual.manual;
+      const novosDados={...prev,[mesRef]:{...mesAtual,contas:nc,investimentos:ni,manual:nm}};
+      syncAll(novosDados,dict,"all");
+      return novosDados;
+    });
   };
 
   const calcChecklist=()=>{
@@ -753,4 +797,3 @@ export default function App(){
       </div>
     </div>
   );
-}
