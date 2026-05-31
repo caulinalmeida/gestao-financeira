@@ -19,6 +19,7 @@ const C = {
   blue50:"#E6F1FB",blue600:"#185FA5",
 };
 
+// ── Helpers ───────────────────────────────────────────────────────────────────
 function fmtBRL(v){return"R$ "+Number(v||0).toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2});}
 function parseBRL(s){if(!s&&s!==0)return 0;const str=String(s).replace(/R\$\s*/g,"").trim();if(str.includes(","))return parseFloat(str.replace(/\./g,"").replace(",","."))||0;return parseFloat(str)||0;}
 function normalize(s){return(s||"").toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^A-Z0-9\s]/g," ").replace(/\s+/g," ").trim();}
@@ -30,17 +31,7 @@ function sumArr(arr){return(arr||[]).reduce((a,b)=>a+(b.valor||0),0);}
 function uid(){return Math.random().toString(36).slice(2,9);}
 
 // ── Google Auth ───────────────────────────────────────────────────────────────
-let tokenClient=null;
-
-function loadGsiScript(){
-  return new Promise(res=>{
-    if(window.google?.accounts){res();return;}
-    const s=document.createElement("script");
-    s.src="https://accounts.google.com/gsi/client";
-    s.onload=res;
-    document.head.appendChild(s);
-  });
-}
+let tokenClient = null;
 
 function getStoredToken(){
   try{
@@ -56,6 +47,16 @@ function storeToken(token){
     sessionStorage.setItem("gf_token",token);
     sessionStorage.setItem("gf_token_exp",String(Date.now()+3500*1000));
   }catch(e){}
+}
+
+function loadGsiScript(){
+  return new Promise(res=>{
+    if(window.google?.accounts){res();return;}
+    const s=document.createElement("script");
+    s.src="https://accounts.google.com/gsi/client";
+    s.onload=res;
+    document.head.appendChild(s);
+  });
 }
 
 async function getToken(forceConsent=false){
@@ -77,13 +78,14 @@ async function getToken(forceConsent=false){
   });
 }
 
-// ── Sheets helpers ────────────────────────────────────────────────────────────
+// ── Sheets API ────────────────────────────────────────────────────────────────
 async function sheetsGet(range){
   const tok=await getToken();
   const r=await fetch(`${API_BASE}/values/${encodeURIComponent(range)}`,{headers:{Authorization:`Bearer ${tok}`}});
   const d=await r.json();
   return d.values||[];
 }
+
 async function sheetsAppend(range,values){
   const tok=await getToken();
   await fetch(`${API_BASE}/values/${encodeURIComponent(range)}:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`,{
@@ -91,6 +93,7 @@ async function sheetsAppend(range,values){
     body:JSON.stringify({range,majorDimension:"ROWS",values}),
   });
 }
+
 async function sheetsClear(range){
   const tok=await getToken();
   await fetch(`${API_BASE}/values/${encodeURIComponent(range)}:clear`,{
@@ -103,7 +106,6 @@ function contaToRow(mes,r){return[mes,r.data||"",r.transacao,String(parseBRL(r.v
 function rowToConta(row){return{id:uid(),transacao:row[2]||"",valor:String(parseBRL(row[3])),dono:row[4]||"Caulin",tipo:row[5]||"DESPESA",parcelas:row[6]||"",obs:row[7]||""};}
 function faturaToRow(mes,r){return[mes,r.data||"",r.nome,r.parcela||"",String(r.valor),r.dono,r.tipo||"DESPESA",r.parcelas||"VARIÁVEL",r.obs||"",r.cartao||"Itaú Black"];}
 function rowToFatura(row){return{id:uid(),data:row[1]||"",nome:row[2]||"",parcela:row[3]||"",valor:parseBRL(row[4]),dono:row[5]||"",tipo:row[6]||"DESPESA",parcelas:row[7]||"VARIÁVEL",obs:row[8]||"",cartao:row[9]||"Itaú Black",isNew:false};}
-function invToRow(mes,r){return[mes,r.descricao,String(parseBRL(r.valor)),r.dono,r.obs||""];}
 function dictToRow(d){return[d.key,d.dono,d.parcelas,d.obs||""];}
 function rowToDict(row){return{key:row[0]||"",dono:row[1]||"Caulin",parcelas:row[2]||"VARIÁVEL",obs:row[3]||""};}
 
@@ -114,26 +116,21 @@ const card={background:"#fff",border:"1px solid #f0f0f0",borderRadius:12,padding
 const th={padding:"8px 10px",textAlign:"left",color:"#888",fontWeight:500,fontSize:11,whiteSpace:"nowrap",borderBottom:"1px solid #f0f0f0",textTransform:"uppercase",letterSpacing:"0.04em"};
 const td={padding:"7px 10px",fontSize:13,borderBottom:"1px solid #f8f8f8"};
 
+// ── UI Components ─────────────────────────────────────────────────────────────
 function Btn({active,danger,small,children,onClick,style={},disabled}){
-  const base={fontSize:small?11:13,padding:small?"4px 10px":"8px 18px",borderRadius:8,border:"1px solid #e0e0e0",cursor:disabled?"not-allowed":"pointer",fontWeight:active?500:400,display:"inline-flex",alignItems:"center",gap:5,opacity:disabled?0.5:1,transition:"all 0.15s",...style};
+  const base={fontSize:small?11:13,padding:small?"4px 10px":"8px 18px",borderRadius:8,border:"1px solid #e0e0e0",cursor:disabled?"not-allowed":"pointer",fontWeight:active?500:400,display:"inline-flex",alignItems:"center",gap:5,opacity:disabled?0.5:1,...style};
   const theme=danger?{background:"transparent",color:"#c0392b",borderColor:"#f5c6c6"}:active?{background:C.teal50,color:C.teal600,borderColor:C.teal100}:{background:"#f8f8f8",color:"#444",borderColor:"#e8e8e8"};
-  return<button onClick={disabled?undefined:onClick} style={{...base,...theme}}>{children}</button>;
+  return <button onClick={disabled?undefined:onClick} style={{...base,...theme}}>{children}</button>;
 }
 
 function Badge({color,children}){
   const t=color==="new"?{bg:C.amber50,c:C.amber600}:{bg:C.green50,c:C.green600};
-  return<span style={{fontSize:10,padding:"3px 8px",borderRadius:10,fontWeight:600,background:t.bg,color:t.c}}>{children}</span>;
+  return <span style={{fontSize:10,padding:"3px 8px",borderRadius:10,fontWeight:600,background:t.bg,color:t.c}}>{children}</span>;
 }
 
 function MetricCard({label,value,sub,accent,icon}){
-  const a={
-    teal:{bg:C.teal50,color:C.teal600,border:C.teal100},
-    red:{bg:C.red50,color:C.red600,border:"#fadadd"},
-    green:{bg:C.green50,color:C.green600,border:"#c8e6c9"},
-    purple:{bg:C.purple50,color:C.purple600,border:"#d1c4e9"},
-    blue:{bg:C.blue50,color:C.blue600,border:"#bbdefb"},
-    none:{bg:"#f8f8f8",color:"#444",border:"#eee"},
-  }[accent||"none"];
+  const themes={teal:{bg:C.teal50,color:C.teal600,border:C.teal100},red:{bg:C.red50,color:C.red600,border:"#fadadd"},green:{bg:C.green50,color:C.green600,border:"#c8e6c9"},purple:{bg:C.purple50,color:C.purple600,border:"#d1c4e9"},blue:{bg:C.blue50,color:C.blue600,border:"#bbdefb"},none:{bg:"#f8f8f8",color:"#444",border:"#eee"}};
+  const a=themes[accent||"none"];
   return(
     <div style={{background:a.bg,border:`1px solid ${a.border}`,borderRadius:12,padding:"1rem"}}>
       <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:6}}>
@@ -155,7 +152,7 @@ function ProgressBar({pct,color}){
 }
 
 function SectionLabel({children}){
-  return<div style={{fontSize:10,fontWeight:600,color:"#aaa",textTransform:"uppercase",letterSpacing:"0.08em",padding:"12px 0 5px"}}>{children}</div>;
+  return <div style={{fontSize:10,fontWeight:600,color:"#aaa",textTransform:"uppercase",letterSpacing:"0.08em",padding:"12px 0 5px"}}>{children}</div>;
 }
 
 function Modal({onClose,children}){
@@ -173,11 +170,25 @@ function CopyMesModal({dadosMes,mesRef,onClose,onImport}){
   const prevNome=idx>0?MESES[idx-1]:null;
   const prev=prevNome?dadosMes[prevNome]:null;
   const [sel2,setSel2]=useState({contas:{},investimentos:{},manual:{}});
-  if(!prev||!prevNome)return(<div style={{padding:"1rem"}}><p style={{fontSize:13,marginBottom:12,color:"#666"}}>Não há dados no mês anterior.</p><Btn onClick={onClose}>Fechar</Btn></div>);
+  if(!prev||!prevNome) return(
+    <div style={{padding:"1rem"}}>
+      <p style={{fontSize:13,marginBottom:12,color:"#666"}}>Não há dados no mês anterior.</p>
+      <Btn onClick={onClose}>Fechar</Btn>
+    </div>
+  );
   const toggle=(sec,id)=>setSel2(p=>({...p,[sec]:{...p[sec],[id]:!p[sec][id]}}));
   const allToggle=(sec,items)=>{const allOn=items.every(i=>sel2[sec][i.id]);const nx={};items.forEach(i=>nx[i.id]=!allOn);setSel2(p=>({...p,[sec]:nx}));};
-  const sections=[{key:"contas",label:"Contas / Renda",items:prev.contas||[]},{key:"investimentos",label:"Investimentos",items:prev.investimentos||[]},{key:"manual",label:"Outros cartões",items:prev.manual||[]}].filter(s=>s.items.length>0);
-  const doImport=()=>{const res={};sections.forEach(s=>{res[s.key]=s.items.filter(i=>sel2[s.key][i.id]).map(i=>({...i,id:uid()}));});onImport(res);onClose();};
+  const sections=[
+    {key:"contas",label:"Contas / Renda",items:prev.contas||[]},
+    {key:"investimentos",label:"Investimentos",items:prev.investimentos||[]},
+    {key:"manual",label:"Outros cartões",items:prev.manual||[]},
+  ].filter(s=>s.items.length>0);
+  const doImport=()=>{
+    const res={};
+    sections.forEach(s=>{res[s.key]=s.items.filter(i=>sel2[s.key][i.id]).map(i=>({...i,id:uid()}));});
+    onImport(res);
+    onClose();
+  };
   return(
     <div>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
@@ -227,33 +238,57 @@ export default function App(){
   const fileRef=useRef();
   const syncTimer=useRef(null);
 
-  const getMes=m=>dadosMes[m]||{fatura:[],manual:[],contas:[],investimentos:[]};
-  const setMesField=(m,f,v)=>setDadosMes(p=>({...p,[m]:{...getMes(m),[f]:v}}));
-  const cur=getMes(mesRef);
-  const fatura=cur.fatura,manual=cur.manual,contas=cur.contas,invest=cur.investimentos;
-  const setFatura=v=>setMesField(mesRef,"fatura",v);
-  const setManual=v=>setMesField(mesRef,"manual",v);
-  const setContas=v=>setMesField(mesRef,"contas",v);
-  const setInvest=v=>setMesField(mesRef,"investimentos",v);
-  const togglePago=id=>setPago(p=>({...p,[id]:!p[id]}));
-  const mesesComDados=Object.keys(dadosMes);
-  const vPessoa=(v,dono,pessoa)=>dono==="Dividido"?v/2:dono===pessoa?v:0;
-
+  // ── Auto-load se já tem token ─────────────────────────────────────────────
   useEffect(()=>{
     if(authStatus==="ok") loadAllData();
-  },[authStatus]);
-    setAuthStatus("loading");
-    try{
-      await getToken(true);
-      setAuthStatus("ok");
-      await loadAllData();
-    }catch(e){
-      console.error(e);
-      setAuthStatus("error");
-    }
-  };
+  },[]);
 
-  const loadAllData=async()=>{
+  // ── State helpers ─────────────────────────────────────────────────────────
+  const getMes=useCallback(m=>dadosMes[m]||{fatura:[],manual:[],contas:[],investimentos:[]},[dadosMes]);
+
+  // ── Sync to Sheets ────────────────────────────────────────────────────────
+  const syncAll=useCallback((dadosMesAtual,dictAtual,field)=>{
+    if(!getStoredToken()) return;
+    clearTimeout(syncTimer.current);
+    syncTimer.current=setTimeout(async()=>{
+      setSyncStatus("salvando...");
+      try{
+        if(field!=="dict"){
+          await sheetsClear("CARTAO_CREDITO!A2:J");
+          const ccRows=[];
+          Object.entries(dadosMesAtual).forEach(([m,d])=>{
+            [...(d.fatura||[]),...(d.manual||[])].forEach(r=>ccRows.push(faturaToRow(m,r)));
+          });
+          if(ccRows.length) await sheetsAppend("CARTAO_CREDITO!A2",ccRows);
+
+          await sheetsClear("RENDA_DESPESAS!A2:H");
+          const rdRows=[];
+          Object.entries(dadosMesAtual).forEach(([m,d])=>{
+            (d.contas||[]).forEach(r=>rdRows.push(contaToRow(m,r)));
+          });
+          if(rdRows.length) await sheetsAppend("RENDA_DESPESAS!A2",rdRows);
+
+          await sheetsClear("INVESTIMENTOS!A2:E");
+          const invRows=[];
+          Object.entries(dadosMesAtual).forEach(([m,d])=>{
+            (d.investimentos||[]).forEach(r=>invRows.push([m,r.descricao,String(parseBRL(r.valor)),r.dono,r.obs||""]));
+          });
+          if(invRows.length) await sheetsAppend("INVESTIMENTOS!A2",invRows);
+        }
+        if(field==="dict"||field==="all"){
+          await sheetsClear("DICIONARIO!A2:D");
+          if(dictAtual.length) await sheetsAppend("DICIONARIO!A2",dictAtual.map(dictToRow));
+        }
+        setSyncStatus("salvo ✓");
+        setTimeout(()=>setSyncStatus(""),2500);
+      }catch(e){
+        setSyncStatus("erro ao salvar");
+      }
+    },1200);
+  },[]);
+
+  // ── Load all data ─────────────────────────────────────────────────────────
+  async function loadAllData(){
     setSyncStatus("carregando...");
     try{
       const dictRows=await sheetsGet("DICIONARIO!A2:D");
@@ -263,11 +298,10 @@ export default function App(){
       const byMesRD={};
       rdRows.filter(r=>r[0]).forEach(row=>{
         const mes=row[0].toUpperCase();
-        if(!byMesRD[mes]) byMesRD[mes]={contas:[]};
-        byMesRD[mes].contas.push(rowToConta(row));
+        if(!byMesRD[mes]) byMesRD[mes]=[];
+        byMesRD[mes].push(rowToConta(row));
       });
 
-      // Investimentos em aba separada
       const invRows=await sheetsGet("INVESTIMENTOS!A2:E");
       const byMesInv={};
       invRows.filter(r=>r[0]).forEach(row=>{
@@ -287,12 +321,7 @@ export default function App(){
       const allMeses=new Set([...Object.keys(byMesRD),...Object.keys(byMesInv),...Object.keys(byMesCC)]);
       const novo={};
       allMeses.forEach(mes=>{
-        novo[mes]={
-          contas:(byMesRD[mes]?.contas)||[],
-          investimentos:(byMesInv[mes])||[],
-          fatura:(byMesCC[mes])||[],
-          manual:[],
-        };
+        novo[mes]={contas:byMesRD[mes]||[],investimentos:byMesInv[mes]||[],fatura:byMesCC[mes]||[],manual:[]};
       });
       setDadosMes(novo);
       if(allMeses.size>0){
@@ -305,49 +334,70 @@ export default function App(){
       console.error(e);
       setSyncStatus("erro ao carregar");
     }
+  }
+
+  // ── Login ─────────────────────────────────────────────────────────────────
+  const handleLogin=async()=>{
+    setAuthStatus("loading");
+    try{
+      await getToken(true);
+      setAuthStatus("ok");
+      await loadAllData();
+    }catch(e){
+      console.error(e);
+      setAuthStatus("error");
+    }
   };
 
-  const syncAll=useCallback((dadosMesAtual,dictAtual,field)=>{
-    if(authStatus!=="ok") return;
-    clearTimeout(syncTimer.current);
-    syncTimer.current=setTimeout(async()=>{
-      setSyncStatus("salvando...");
-      try{
-        if(field!=="dict"){
-          // Cartão
-          await sheetsClear("CARTAO_CREDITO!A2:J");
-          const ccRows=[];
-          Object.entries(dadosMesAtual).forEach(([m,d])=>{
-            [...(d.fatura||[]),...(d.manual||[])].forEach(r=>ccRows.push(faturaToRow(m,r)));
-          });
-          if(ccRows.length) await sheetsAppend("CARTAO_CREDITO!A2",ccRows);
-          // Contas
-          await sheetsClear("RENDA_DESPESAS!A2:H");
-          const rdRows=[];
-          Object.entries(dadosMesAtual).forEach(([m,d])=>{
-            (d.contas||[]).forEach(r=>rdRows.push(contaToRow(m,r)));
-          });
-          if(rdRows.length) await sheetsAppend("RENDA_DESPESAS!A2",rdRows);
-          // Investimentos em aba separada
-          await sheetsClear("INVESTIMENTOS!A2:E");
-          const invRows=[];
-          Object.entries(dadosMesAtual).forEach(([m,d])=>{
-            (d.investimentos||[]).forEach(r=>invRows.push([m,r.descricao,String(parseBRL(r.valor)),r.dono,r.obs||""]));
-          });
-          if(invRows.length) await sheetsAppend("INVESTIMENTOS!A2",invRows);
-        }
-        if(field==="dict"||field==="all"){
-          await sheetsClear("DICIONARIO!A2:D");
-          const dr=dictAtual.map(dictToRow);
-          if(dr.length) await sheetsAppend("DICIONARIO!A2",dr);
-        }
-        setSyncStatus("salvo ✓");
-        setTimeout(()=>setSyncStatus(""),2500);
-      }catch(e){
-        setSyncStatus("erro ao salvar");
-      }
-    },1200);
-  },[authStatus]);
+  // ── Data mutators ─────────────────────────────────────────────────────────
+  const withSync=(mesAtual,field,updater)=>{
+    setDadosMes(prev=>{
+      const cur=prev[mesAtual]||{fatura:[],manual:[],contas:[],investimentos:[]};
+      const updated=updater(cur);
+      const next={...prev,[mesAtual]:{...cur,...updated}};
+      syncAll(next,dict,field);
+      return next;
+    });
+  };
+
+  const cur=getMes(mesRef);
+  const fatura=cur.fatura,manual=cur.manual,contas=cur.contas,invest=cur.investimentos;
+
+  const updF=(id,f,v)=>withSync(mesRef,"fatura",c=>({fatura:c.fatura.map(r=>r.id===id?{...r,[f]:v}:r)}));
+  const rmF=id=>withSync(mesRef,"fatura",c=>({fatura:c.fatura.filter(r=>r.id!==id)}));
+  const learnRow=row=>{
+    const key=normalize(row.nome).substring(0,25);
+    if(key&&!dict.find(d=>d.key===key)){
+      const nd=[...dict,{key,dono:row.dono,parcelas:row.parcelas,obs:row.obs}];
+      setDict(nd);
+      syncAll(dadosMes,nd,"dict");
+    }
+    updF(row.id,"isNew",false);
+  };
+
+  const updM=(id,f,v)=>withSync(mesRef,"manual",c=>({manual:c.manual.map(r=>r.id===id?{...r,[f]:v}:r)}));
+  const rmM=id=>withSync(mesRef,"manual",c=>({manual:c.manual.filter(r=>r.id!==id)}));
+  const addM=()=>withSync(mesRef,"manual",c=>({manual:[...c.manual,{id:uid(),data:"",nome:"",parcela:"",valor:0,dono:"Caulin",parcelas:"VARIÁVEL",obs:"",cartao:""}]}));
+
+  const updC=(id,f,v)=>withSync(mesRef,"contas",c=>({contas:c.contas.map(r=>r.id===id?{...r,[f]:v}:r)}));
+  const rmC=id=>withSync(mesRef,"contas",c=>({contas:c.contas.filter(r=>r.id!==id)}));
+  const addC=()=>withSync(mesRef,"contas",c=>({contas:[...c.contas,{id:uid(),transacao:"",valor:"",dono:"Dividido",tipo:"DESPESA FIXA",obs:""}]}));
+
+  const updI=(id,f,v)=>withSync(mesRef,"investimentos",c=>({investimentos:c.investimentos.map(r=>r.id===id?{...r,[f]:v}:r)}));
+  const rmI=id=>withSync(mesRef,"investimentos",c=>({investimentos:c.investimentos.filter(r=>r.id!==id)}));
+  const addI=()=>withSync(mesRef,"investimentos",c=>({investimentos:[...c.investimentos,{id:uid(),descricao:"",valor:"",dono:"Caulin",obs:""}]}));
+
+  const handleCopyImport=data=>{
+    setDadosMes(prev=>{
+      const cur=prev[mesRef]||{fatura:[],manual:[],contas:[],investimentos:[]};
+      const nc=data.contas?.length?[...cur.contas,...data.contas]:cur.contas;
+      const ni=data.investimentos?.length?[...cur.investimentos,...data.investimentos]:cur.investimentos;
+      const nm=data.manual?.length?[...cur.manual,...data.manual]:cur.manual;
+      const next={...prev,[mesRef]:{...cur,contas:nc,investimentos:ni,manual:nm}};
+      syncAll(next,dict,"all");
+      return next;
+    });
+  };
 
   const parseCSV=useCallback(()=>{
     setCsvError("");
@@ -371,54 +421,11 @@ export default function App(){
       rows.push({id:uid(),data:rawData.trim(),nome,parcela,valor,dono:hit?.dono||"",parcelas:hit?(parcela?"PARCELADO":hit.parcelas):(parcela?"PARCELADO":"VARIÁVEL"),obs:hit?.obs||(hit?"":"NOVO"),cartao:"Itaú Black",isNew:!hit});
     }
     if(!rows.length){setCsvError("Nenhuma linha válida.");return;}
-    const newFatura=[...fatura,...rows];
-    setFatura(newFatura);
-    const novosDados={...dadosMes,[mesRef]:{...getMes(mesRef),fatura:newFatura}};
-    syncAll(novosDados,dict,"fatura");
+    withSync(mesRef,"fatura",c=>({fatura:[...c.fatura,...rows]}));
     setCsvError(erros.length?`${rows.length} importadas. Avisos: ${erros.join(", ")}`:"");
-  },[csvRaw,dict,fatura,mesRef,dadosMes,syncAll]);
+  },[csvRaw,dict,mesRef,dadosMes]);
 
-  const withSync=(setter,field)=>(newVal)=>{
-    setter(newVal);
-    const novosDados={...dadosMes,[mesRef]:{...getMes(mesRef),[field]:newVal}};
-    syncAll(novosDados,dict,field);
-  };
-
-  const updF=(id,f,v)=>{const nf=fatura.map(r=>r.id===id?{...r,[f]:v}:r);withSync(setFatura,"fatura")(nf);};
-  const rmF=id=>withSync(setFatura,"fatura")(fatura.filter(r=>r.id!==id));
-  const learnRow=row=>{
-    const key=normalize(row.nome).substring(0,25);
-    if(key&&!dict.find(d=>d.key===key)){
-      const nd=[...dict,{key,dono:row.dono,parcelas:row.parcelas,obs:row.obs}];
-      setDict(nd);syncAll(dadosMes,nd,"dict");
-    }
-    updF(row.id,"isNew",false);
-  };
-
-  const updM=(id,f,v)=>{const nm=manual.map(r=>r.id===id?{...r,[f]:v}:r);withSync(setManual,"manual")(nm);};
-  const rmM=id=>withSync(setManual,"manual")(manual.filter(r=>r.id!==id));
-  const addM=()=>withSync(setManual,"manual")([...manual,{id:uid(),data:"",nome:"",parcela:"",valor:0,dono:"Caulin",parcelas:"VARIÁVEL",obs:"",cartao:""}]);
-
-  const updC=(id,f,v)=>{const nc=contas.map(r=>r.id===id?{...r,[f]:v}:r);withSync(setContas,"contas")(nc);};
-  const rmC=id=>withSync(setContas,"contas")(contas.filter(r=>r.id!==id));
-  const addC=()=>withSync(setContas,"contas")([...contas,{id:uid(),transacao:"",valor:"",dono:"Dividido",tipo:"DESPESA FIXA",obs:""}]);
-
-  const updI=(id,f,v)=>{const ni=invest.map(r=>r.id===id?{...r,[f]:v}:r);withSync(setInvest,"investimentos")(ni);};
-  const rmI=id=>withSync(setInvest,"investimentos")(invest.filter(r=>r.id!==id));
-  const addI=()=>withSync(setInvest,"investimentos")([...invest,{id:uid(),descricao:"",valor:"",dono:"Caulin",obs:""}]);
-
-  const handleCopyImport=data=>{
-    setDadosMes(prev=>{
-      const mesAtual=prev[mesRef]||{fatura:[],manual:[],contas:[],investimentos:[]};
-      const nc=data.contas?.length?[...mesAtual.contas,...data.contas]:mesAtual.contas;
-      const ni=data.investimentos?.length?[...mesAtual.investimentos,...data.investimentos]:mesAtual.investimentos;
-      const nm=data.manual?.length?[...mesAtual.manual,...data.manual]:mesAtual.manual;
-      const novosDados={...prev,[mesRef]:{...mesAtual,contas:nc,investimentos:ni,manual:nm}};
-      syncAll(novosDados,dict,"all");
-      return novosDados;
-    });
-  };
-
+  // ── Checklist calc ────────────────────────────────────────────────────────
   const calcChecklist=()=>{
     const allCartao=[...fatura,...manual];
     let rendaCaulin=0,rendaLuanna=0,despCaulin=0,despLuanna=0;
@@ -430,7 +437,12 @@ export default function App(){
       contasList.push({...r,valor:v});
     });
     invest.forEach(r=>invList.push({...r,valor:parseBRL(r.valor)}));
-    [...contasList,...invList].forEach(r=>{const v=r.valor;if(r.dono==="Dividido"){despCaulin+=v/2;despLuanna+=v/2;}else if(r.dono==="Caulin")despCaulin+=v;else if(r.dono==="Luanna")despLuanna+=v;});
+    [...contasList,...invList].forEach(r=>{
+      const v=r.valor;
+      if(r.dono==="Dividido"){despCaulin+=v/2;despLuanna+=v/2;}
+      else if(r.dono==="Caulin")despCaulin+=v;
+      else if(r.dono==="Luanna")despLuanna+=v;
+    });
     const cartoesMap={};
     allCartao.forEach(r=>{
       if(!r.valor||!r.dono)return;
@@ -439,7 +451,9 @@ export default function App(){
       const sub=r.parcelas==="RECORRENTE"?"fixos":r.parcelas==="PARCELADO"?"parcelados":"variaveis";
       cartoesMap[nome][sub].push(r);
       const v=r.valor;
-      if(r.dono==="Dividido"){despCaulin+=v/2;despLuanna+=v/2;}else if(r.dono==="Caulin")despCaulin+=v;else if(r.dono==="Luanna")despLuanna+=v;
+      if(r.dono==="Dividido"){despCaulin+=v/2;despLuanna+=v/2;}
+      else if(r.dono==="Caulin")despCaulin+=v;
+      else if(r.dono==="Luanna")despLuanna+=v;
     });
     const pagoCaulin=[...contasList,...invList].filter(r=>pago[r.id]).reduce((a,r)=>a+(r.dono==="Dividido"?r.valor/2:r.dono==="Caulin"?r.valor:0),0);
     const pagoCartaoCaulin=allCartao.filter(r=>pago[r.id]).reduce((a,r)=>a+(r.dono==="Dividido"?r.valor/2:r.dono==="Caulin"?r.valor:0),0);
@@ -451,11 +465,14 @@ export default function App(){
     return{rendaCaulin,rendaLuanna,despCaulin,despLuanna,saldoCaulin,contasList,invList,totalFaturaCartoes};
   };
 
+  const vPessoa=(v,dono,pessoa)=>dono==="Dividido"?v/2:dono===pessoa?v:0;
   const filtros=["TODOS","PARCELADO","RECORRENTE","VARIÁVEL","NOVO"];
   const faturaFilt=fatura.filter(r=>filtro==="TODOS"?true:filtro==="NOVO"?r.isNew:r.parcelas===filtro);
   const newCount=fatura.filter(r=>r.isNew).length;
+  const mesesComDados=Object.keys(dadosMes);
   const TABS=[{l:"Fatura",i:"💳"},{l:"Contas",i:"🏠"},{l:"Investimentos",i:"📈"},{l:"Checklist",i:"✅"}];
 
+  // ── Tela de login ─────────────────────────────────────────────────────────
   if(authStatus!=="ok"){
     return(
       <div style={{minHeight:"100vh",background:"#f7f8fa",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"system-ui,sans-serif"}}>
@@ -464,7 +481,7 @@ export default function App(){
           <h2 style={{fontSize:20,fontWeight:700,margin:"0 0 6px",color:"#1a1a1a"}}>Gestão Financeira</h2>
           <p style={{fontSize:13,color:"#888",margin:"0 0 24px"}}>Caulin & Luanna</p>
           <p style={{fontSize:13,color:"#666",marginBottom:24,lineHeight:1.6}}>Conecte sua conta Google para carregar e salvar os dados automaticamente na planilha.</p>
-          {authStatus==="error"&&<p style={{fontSize:12,color:C.red600,marginBottom:12,background:C.red50,padding:"8px 12px",borderRadius:8}}>Erro ao conectar. Verifique as permissões e tente novamente.</p>}
+          {authStatus==="error"&&<p style={{fontSize:12,color:C.red600,marginBottom:12,background:C.red50,padding:"8px 12px",borderRadius:8}}>Erro ao conectar. Tente novamente.</p>}
           <button onClick={handleLogin} disabled={authStatus==="loading"} style={{width:"100%",padding:"12px",borderRadius:10,border:`1px solid ${C.teal100}`,background:C.teal600,color:"#fff",cursor:"pointer",fontSize:15,fontWeight:600,display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>
             {authStatus==="loading"?"Conectando...":"🔑 Entrar com Google"}
           </button>
@@ -473,8 +490,10 @@ export default function App(){
     );
   }
 
+  // ── App principal ─────────────────────────────────────────────────────────
   return(
     <div style={{minHeight:"100vh",background:"#f7f8fa",fontFamily:"system-ui,sans-serif"}}>
+
       {/* Topbar */}
       <div style={{background:C.teal600,padding:"0 24px",display:"flex",alignItems:"center",justifyContent:"space-between",height:56,position:"sticky",top:0,zIndex:100}}>
         <div style={{display:"flex",alignItems:"center",gap:10}}>
@@ -500,10 +519,11 @@ export default function App(){
       </div>
 
       <div style={{maxWidth:900,margin:"0 auto",padding:"24px 16px"}}>
+
         {/* Nav tabs */}
         <div style={{display:"flex",gap:4,background:"#fff",borderRadius:12,padding:4,marginBottom:20,boxShadow:"0 1px 4px rgba(0,0,0,0.06)"}}>
           {TABS.map((t,i)=>(
-            <button key={t.l} onClick={()=>setTab(i)} style={{flex:1,fontSize:13,padding:"8px 4px",border:"none",borderRadius:8,background:tab===i?C.teal600:"transparent",color:tab===i?"#fff":"#888",cursor:"pointer",fontWeight:tab===i?600:400,display:"flex",alignItems:"center",justifyContent:"center",gap:5,transition:"all 0.15s"}}>
+            <button key={t.l} onClick={()=>setTab(i)} style={{flex:1,fontSize:13,padding:"8px 4px",border:"none",borderRadius:8,background:tab===i?C.teal600:"transparent",color:tab===i?"#fff":"#888",cursor:"pointer",fontWeight:tab===i?600:400,display:"flex",alignItems:"center",justifyContent:"center",gap:5}}>
               <span>{t.i}</span>{t.l}
             </button>
           ))}
@@ -527,13 +547,14 @@ export default function App(){
                   <div style={{display:"flex",gap:8,marginBottom:10,flexWrap:"wrap"}}>
                     <Btn onClick={()=>fileRef.current.click()}>📁 Importar arquivo</Btn>
                     <input ref={fileRef} type="file" accept=".csv,.txt" style={{display:"none"}} onChange={e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=ev=>{setCsvRaw(ev.target.result);setCsvError("");};r.readAsText(f,"utf-8");}}/>
-                    {fatura.length>0&&!faturaLixo&&<Btn danger small onClick={()=>{setFaturaLixo(fatura);withSync(setFatura,"fatura")([]);}}>🗑 Limpar fatura</Btn>}
-                    {faturaLixo&&<Btn small onClick={()=>{withSync(setFatura,"fatura")(faturaLixo);setFaturaLixo(null);}} style={{color:C.amber600,borderColor:C.amber600,background:C.amber50}}>↩ Desfazer</Btn>}
+                    {fatura.length>0&&!faturaLixo&&<Btn danger small onClick={()=>{setFaturaLixo(fatura);withSync(mesRef,"fatura",()=>({fatura:[]}));}}>🗑 Limpar fatura</Btn>}
+                    {faturaLixo&&<Btn small onClick={()=>{withSync(mesRef,"fatura",()=>({fatura:faturaLixo}));setFaturaLixo(null);}} style={{color:C.amber600,borderColor:C.amber600,background:C.amber50}}>↩ Desfazer</Btn>}
                   </div>
                   <textarea value={csvRaw} onChange={e=>{setCsvRaw(e.target.value);setCsvError("");}} placeholder={"data;lançamento;valor\n05/05/2026;AMAZON PRIME;39,90"} style={{...inp,height:90,resize:"vertical",fontFamily:"monospace",fontSize:12}}/>
                   {csvError&&<p style={{fontSize:12,color:C.red600,marginTop:6,background:C.red50,padding:"6px 10px",borderRadius:6}}>{csvError}</p>}
                   <div style={{marginTop:10}}><Btn active onClick={parseCSV}>⚡ Processar fatura</Btn></div>
                 </div>
+
                 {fatura.length>0&&(
                   <div style={card}>
                     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12,flexWrap:"wrap",gap:8}}>
@@ -676,7 +697,7 @@ export default function App(){
             const isPago=!!pago[id];
             return(
               <div style={{display:"flex",alignItems:"center",gap:8,padding:"8px 0",borderTop:"1px solid #f5f5f5"}}>
-                <input type="checkbox" checked={isPago} onChange={()=>togglePago(id)} style={{flexShrink:0,cursor:"pointer",accentColor:C.teal600,width:15,height:15}}/>
+                <input type="checkbox" checked={isPago} onChange={()=>setPago(p=>({...p,[id]:!p[id]}))} style={{flexShrink:0,cursor:"pointer",accentColor:C.teal600,width:15,height:15}}/>
                 <span onClick={onClick} style={{flex:1,fontSize:13,textDecoration:isPago?"line-through":"none",color:isPago?"#bbb":"#333",cursor:onClick?"pointer":"default",userSelect:"none"}}>
                   {label}{sub&&<span style={{fontSize:11,color:"#bbb",marginLeft:5}}>{sub}</span>}
                   {onClick&&<span style={{fontSize:11,color:"#ccc",marginLeft:4}}>›</span>}
@@ -709,6 +730,7 @@ export default function App(){
                 </Modal>
               )}
 
+              {/* Summary cards */}
               <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:10,marginBottom:20}}>
                 <MetricCard label="Renda total" value={fmtBRL(rendaTotal)} sub={`C: ${fmtBRL(rendaCaulin)}`} accent="teal" icon="💰"/>
                 <MetricCard label="Despesas Caulin" value={fmtBRL(despCaulin)} accent="red" icon="📉"/>
@@ -730,6 +752,7 @@ export default function App(){
                 })}
               </div>
 
+              {/* Checklists */}
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
                 {["Caulin","Luanna"].map(pessoa=>{
                   const accent=pessoa==="Caulin"?{bg:C.teal50,color:C.teal600,border:C.teal100}:{bg:C.purple50,color:C.purple600,border:"#d1c4e9"};
@@ -757,18 +780,22 @@ export default function App(){
                       <SectionLabel>Cartão</SectionLabel>
                       {totalFaturaCartoes.map(({nome,fixos,parcelados,variaveis})=>{
                         const hasAny=[...fixos,...parcelados,...variaveis].some(r=>vPessoa(r.valor,r.dono,pessoa)>0);
-                        if(!hasAny)return null;
+                        if(!hasAny) return null;
                         return(
                           <div key={nome} style={{marginBottom:4}}>
                             <div style={{fontSize:11,color:"#aaa",padding:"6px 0 2px",fontWeight:600}}>{nome}</div>
-                            {[{key:`fixos-${nome}-${pessoa}`,label:"Fixos",rows:fixos},{key:`parc-${nome}-${pessoa}`,label:"Parcelados",rows:parcelados},{key:`var-${nome}-${pessoa}`,label:"Variáveis",rows:variaveis}].map(g=>{
+                            {[
+                              {key:`fixos-${nome}-${pessoa}`,label:"Fixos",rows:fixos},
+                              {key:`parc-${nome}-${pessoa}`,label:"Parcelados",rows:parcelados},
+                              {key:`var-${nome}-${pessoa}`,label:"Variáveis",rows:variaveis},
+                            ].map(g=>{
                               const gRows=g.rows.filter(r=>vPessoa(r.valor,r.dono,pessoa)>0);
-                              if(!gRows.length)return null;
+                              if(!gRows.length) return null;
                               const gTotal=gRows.reduce((a,r)=>a+vPessoa(r.valor,r.dono,pessoa),0);
                               const gPago=!!pago[g.key];
                               return(
                                 <div key={g.key} style={{display:"flex",alignItems:"center",gap:8,padding:"8px 0",borderTop:"1px solid #f5f5f5"}}>
-                                  <input type="checkbox" checked={gPago} onChange={()=>{togglePago(g.key);gRows.forEach(r=>setPago(p=>({...p,[r.id]:!gPago})));}} style={{flexShrink:0,cursor:"pointer",accentColor:C.teal600,width:15,height:15}}/>
+                                  <input type="checkbox" checked={gPago} onChange={()=>{setPago(p=>({...p,[g.key]:!gPago}));gRows.forEach(r=>setPago(p=>({...p,[r.id]:!gPago})));}} style={{flexShrink:0,cursor:"pointer",accentColor:C.teal600,width:15,height:15}}/>
                                   <span onClick={()=>setModal({title:`${nome} — ${g.label} (${pessoa})`,rows:gRows,pessoa})} style={{flex:1,fontSize:13,fontWeight:500,textDecoration:gPago?"line-through":"none",color:gPago?"#bbb":accent.color,cursor:"pointer",userSelect:"none"}}>
                                     {g.label} <span style={{fontSize:11,color:"#ccc"}}>›</span>
                                   </span>
@@ -788,7 +815,7 @@ export default function App(){
                 const{rendaCaulin,rendaLuanna,despCaulin,despLuanna,saldoCaulin,totalFaturaCartoes}=calcChecklist();
                 const txt=[`📊 CHECK LIST — ${mesRef}`,"",`💰 Renda total → ${fmtBRL(rendaCaulin+rendaLuanna)}`,`   Caulin: ${fmtBRL(rendaCaulin)} · Luanna: ${fmtBRL(rendaLuanna)}`,"",`📉 Despesas`,`   Caulin: ${fmtBRL(despCaulin)} · Luanna: ${fmtBRL(despLuanna)}`,"",`💵 Saldo Caulin → ${fmtBRL(saldoCaulin)}`,"",`💳 Faturas`,...totalFaturaCartoes.map(c=>`   ${c.nome}: ${fmtBRL(c.total)}`)].join("\n");
                 navigator.clipboard.writeText(txt).then(()=>{setCopied(true);setTimeout(()=>setCopied(false),2000);});
-              }} style={{width:"100%",marginTop:16,padding:"12px",borderRadius:10,border:`1px solid ${C.teal600}`,background:copied?C.teal600:C.teal50,color:copied?"#fff":C.teal600,cursor:"pointer",fontSize:14,fontWeight:600,display:"flex",alignItems:"center",justifyContent:"center",gap:8,transition:"all 0.2s"}}>
+              }} style={{width:"100%",marginTop:16,padding:"12px",borderRadius:10,border:`1px solid ${C.teal600}`,background:copied?C.teal600:C.teal50,color:copied?"#fff":C.teal600,cursor:"pointer",fontSize:14,fontWeight:600,display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>
                 {copied?"✅ Copiado!":"📱 Copiar resumo para WhatsApp"}
               </button>
             </div>
@@ -797,3 +824,4 @@ export default function App(){
       </div>
     </div>
   );
+}
