@@ -1,5 +1,29 @@
 import { useState, useRef, useCallback, useEffect, useSyncExternalStore } from "react";
 
+/**
+ * ⚠️ MODO DEMO — TEMPORÁRIO, PARA TESTE LOCAL
+ *
+ * Pula o login do Google e carrega dados fictícios, porque
+ * http://localhost:5173 não está nas origens JavaScript autorizadas do OAuth
+ * (só https://claude.ai e https://caulinalmeida.github.io estão).
+ *
+ * Só liga com `import.meta.env.DEV`, ou seja, apenas em `npm run dev`.
+ * O `npm run build` elimina esse ramo, então NÃO há como ir para produção.
+ *
+ * Enquanto ligado: nada é lido nem gravado no Google Sheets. As edições
+ * funcionam na tela, mas somem ao recarregar.
+ *
+ * Para usar o login real mesmo em dev, abra com ?login na URL:
+ *   http://localhost:5173/gestao-financeira/?login
+ *
+ * PARA REMOVER DE VEZ (antes do deploy): apague este bloco, o import dinâmico
+ * de ./dadosDemo.js em loadAllData, os usos de MODO_DEMO e o arquivo
+ * src/dadosDemo.js. A correção definitiva é adicionar http://localhost:5173
+ * às origens autorizadas no Google Cloud Console.
+ */
+const MODO_DEMO = import.meta.env.DEV &&
+  !new URLSearchParams(globalThis.location?.search || "").has("login");
+
 const CLIENT_ID = "551652083809-p6o9ch2bvn8ipg508b7nu2afu5fn1ho1.apps.googleusercontent.com";
 const SHEET_ID  = "19qO91TbQQJMLd_ONeP--Gdh7NwliuYuYQ-GuA-PNen8";
 const SCOPES    = "https://www.googleapis.com/auth/spreadsheets";
@@ -644,7 +668,7 @@ export default function App(){
   const [faturaTab,setFaturaTab]=useState(0);
   const [mesRef,setMesRef]=useState(mesAtualKey);
   const [dict,setDict]=useState([]);
-  const [dadosMes,setDadosMes]=useState({});
+  const [dadosMes,setDadosMes]=useState({});
   const [filtro,setFiltro]=useState("TODOS");
   const [copied,setCopied]=useState(false);
   const [showCopy,setShowCopy]=useState(false);
@@ -662,7 +686,7 @@ export default function App(){
   const [showCartoes,setShowCartoes]=useState(false);
   const [modal,setModal]=useState(null);
   const [pago,setPago]=useState({});
-  const [authStatus,setAuthStatus]=useState(()=>getStoredToken()?"ok":"idle");
+  const [authStatus,setAuthStatus]=useState(()=>MODO_DEMO?"ok":(getStoredToken()?"ok":"idle"));
   const [syncStatus,setSyncStatus]=useState("");
   const syncTimer=useRef(null);
   const ajusteTimer=useRef(null);
@@ -763,6 +787,11 @@ export default function App(){
    */
   const pedirSync=async()=>{
     if(pedindoSync) return;
+    if(MODO_DEMO){
+      setSyncStatus("modo demo — sem sync real");
+      setTimeout(()=>setSyncStatus(""),2500);
+      return;
+    }
     setPedindoSync(true);
     setSyncStatus("pedindo atualização...");
     try{
@@ -783,6 +812,21 @@ export default function App(){
 
   // ── Load all data ─────────────────────────────────────────────────────────
   async function loadAllData(){
+    // MODO DEMO: import dinâmico, para o chunk não entrar no bundle de produção.
+    if(MODO_DEMO){
+      setSyncStatus("carregando demo...");
+      const d=await import("./dadosDemo.js");
+      setDict(d.dict);
+      setOfTransacoes(d.ofTransacoes);
+      setOfCartoes(d.ofCartoes);
+      setOfFaturas(d.ofFaturas);
+      setAjustes(d.ajustes);
+      setOfStatus(d.ofStatus);
+      setDadosMes(d.dadosMes);
+      setMesRef(d.mesInicial);
+      setSyncStatus("");
+      return;
+    }
     setSyncStatus("carregando...");
     try{
       const dictRows=await sheetsGet("DICIONARIO!A2:D");
@@ -1049,6 +1093,15 @@ export default function App(){
   // ── App principal ─────────────────────────────────────────────────────────
   return(
     <div style={{minHeight:"100vh",background:C.bg,fontFamily:"system-ui,sans-serif",color:C.text}}>
+
+      {/* ⚠️ TEMPORÁRIO — remover junto com MODO_DEMO antes do deploy */}
+      {MODO_DEMO&&(
+        <div style={{background:C.amber600,color:"#241A05",padding:"7px 16px",fontSize:12,
+          fontWeight:700,textAlign:"center",letterSpacing:"0.02em"}}>
+          ⚠️ MODO DEMO — sem login, dados fictícios, nada é salvo.{" "}
+          <a href="?login" style={{color:"#241A05",textDecoration:"underline"}}>usar login real</a>
+        </div>
+      )}
 
       {/* Topbar */}
       <div style={{background:C.surface,borderBottom:`1px solid ${C.border}`,padding:isMobile?"0 14px":"0 24px",display:"flex",alignItems:"center",justifyContent:"space-between",height:58,position:"sticky",top:0,zIndex:100}}>
