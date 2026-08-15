@@ -221,6 +221,44 @@ const faltando = sandbox.COLS_TRANSACOES.filter(c => c !== 'atualizado_em' && !c
 ok('toda coluna de OF_TRANSACOES é preenchida por _mapearTransacao',
    faltando.length === 0, 'faltando: ' + faltando.join(', '));
 
+// OF_AJUSTES é escrita pelo app e criada pelo script — dois lados, um contrato.
+// Já quebrou uma vez: a aba nem existia no Apps Script, e sem ela a leitura em
+// lote do app falhava e toda a camada Open Finance sumia da tela.
+ok('Apps Script conhece a aba OF_AJUSTES',
+   sandbox.ABA_AJUSTES === 'OF_AJUSTES' && Array.isArray(sandbox.COLS_AJUSTES));
+ok('garantirAbas() cria OF_AJUSTES',
+   /function garantirAbas\(\)[\s\S]*?ABA_AJUSTES/.test(
+     fs.readFileSync(path.join(__dirname, '..', 'apps-script', 'Sheets.gs'), 'utf8')));
+{
+  // Confronta as duas pontas de verdade: a ordem em que ajusteToRow (App.jsx)
+  // monta a linha tem que ser a ordem que COLS_AJUSTES (Config.gs) declara.
+  // O app usa camelCase e a planilha snake_case, então normaliza os dois.
+  const achatar = s => s.toLowerCase().replace(/_/g, '');
+  const mAjuste = appSrc.match(/function ajusteToRow\(a\)\{([\s\S]*?)\n\}/);
+  const campos = mAjuste ? (mAjuste[1].match(/a\.[a-zA-Z]+/g) || [])
+    .map(s => s.slice(2)).filter((v, i, arr) => arr.indexOf(v) === i) : [];
+  const gsCols = sandbox.COLS_AJUSTES || [];
+  ok('ajusteToRow(App.jsx) escreve na ordem de COLS_AJUSTES(Config.gs)',
+     campos.length === gsCols.length &&
+     campos.every((c, i) => achatar(c) === achatar(gsCols[i])),
+     'app=' + campos.join(',') + ' | gs=' + gsCols.join(','));
+
+  // rowToAjuste lê por índice; se o contrato mudar, ele lê a coluna errada.
+  const mRead = appSrc.match(/function rowToAjuste\(row\)\{([\s\S]*?)\n\}/);
+  const indices = mRead ? (mRead[1].match(/row\[(\d+)\]/g) || [])
+    .map(s => Number(s.match(/\d+/)[0])) : [];
+  ok('rowToAjuste lê todos os índices de 0 a ' + (gsCols.length - 1),
+     gsCols.every((_, i) => indices.includes(i)),
+     'lidos: ' + [...new Set(indices)].sort((a, b) => a - b).join(','));
+
+  // A faixa que o app limpa/lê tem que cobrir exatamente COLS_AJUSTES.
+  const mFaixa = appSrc.match(/OF_AJUSTES!A2:([A-Z])/);
+  const ultima = mFaixa ? mFaixa[1].charCodeAt(0) - 64 : 0;
+  ok('faixa OF_AJUSTES!A2:' + (mFaixa ? mFaixa[1] : '?') +
+     ' cobre as ' + gsCols.length + ' colunas',
+     ultima === gsCols.length, 'faixa=' + ultima + ' cols=' + gsCols.length);
+}
+
 // ── 9. Gerador de dados de exemplo ───────────────────────────────────────────
 console.log('\n=== 9. popularDadosExemplo (fixtures do Módulo 2) ===');
 const escritas = {};

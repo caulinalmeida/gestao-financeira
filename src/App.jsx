@@ -731,8 +731,9 @@ export default function App(){
         setSyncStatus("salvo ✓");
         setTimeout(()=>setSyncStatus(""),2500);
       }catch(e){
-        console.error(e);
-        setSyncStatus("erro ao salvar");
+        console.error("Falha ao gravar OF_AJUSTES. A aba existe? "+
+          "Rode garantirAbas() no Apps Script.",e);
+        setSyncStatus("⚠️ ajustes NÃO salvos");
       }
     },1200);
   },[]);
@@ -821,23 +822,21 @@ export default function App(){
       // ── Open Finance (abas OF_*) ───────────────────────────────────────
       // Toleram ausência: quem ainda não instalou o Apps Script simplesmente
       // não tem essas abas, e o app segue funcionando com os dados legados.
+      // Uma aba por vez: com Promise.all, uma única aba faltando derrubaria a
+      // leitura inteira e o Open Finance sumiria da tela sem erro visível.
       let ofTx=[],ofCards=[],ofBills=[],ofAdj={},ofSt={};
-      try{
-        const[txRows,cardRows,billRows,adjRows,stRows]=await Promise.all([
-          sheetsGet("OF_TRANSACOES!A2:P"),
-          sheetsGet("OF_CARTOES!A2:H"),
-          sheetsGet("OF_FATURAS!A2:F"),
-          sheetsGet("OF_AJUSTES!A2:I"),
-          sheetsGet("OF_STATUS!A2:B"),
-        ]);
-        ofTx=txRows.filter(r=>r[0]).map(rowToOfTx);
-        ofCards=cardRows.filter(r=>r[0]).map(rowToOfCartao);
-        ofBills=billRows.filter(r=>r[0]).map(rowToOfFatura);
-        adjRows.filter(r=>r[1]).map(rowToAjuste).forEach(a=>{ofAdj[chaveAjuste(a.tipo,a.refId)]=a;});
-        stRows.filter(r=>r[0]).forEach(r=>{ofSt[r[0]]=r[1];});
-      }catch(e){
-        console.warn("Abas OF_* ausentes ou ilegíveis — seguindo só com dados legados.",e);
-      }
+      const lerAba=async(faixa,fn)=>{
+        try{ return fn(await sheetsGet(faixa)); }
+        catch(e){ console.warn(`Aba ${faixa.split("!")[0]} ausente ou ilegível.`,e); }
+      };
+      await Promise.all([
+        lerAba("OF_TRANSACOES!A2:P",rows=>{ofTx=rows.filter(r=>r[0]).map(rowToOfTx);}),
+        lerAba("OF_CARTOES!A2:H",   rows=>{ofCards=rows.filter(r=>r[0]).map(rowToOfCartao);}),
+        lerAba("OF_FATURAS!A2:F",   rows=>{ofBills=rows.filter(r=>r[0]).map(rowToOfFatura);}),
+        lerAba("OF_AJUSTES!A2:I",   rows=>{rows.filter(r=>r[1]).map(rowToAjuste)
+          .forEach(a=>{ofAdj[chaveAjuste(a.tipo,a.refId)]=a;});}),
+        lerAba("OF_STATUS!A2:B",    rows=>{rows.filter(r=>r[0]).forEach(r=>{ofSt[r[0]]=r[1];});}),
+      ]);
       setOfTransacoes(ofTx);
       setOfCartoes(ofCards);
       setOfFaturas(ofBills);

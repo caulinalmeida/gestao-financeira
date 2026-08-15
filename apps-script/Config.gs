@@ -18,6 +18,7 @@ var ABA_TRANSACOES = 'OF_TRANSACOES';
 var ABA_CARTOES    = 'OF_CARTOES';
 var ABA_FATURAS    = 'OF_FATURAS';
 var ABA_STATUS     = 'OF_STATUS';
+var ABA_AJUSTES    = 'OF_AJUSTES';
 
 // Janela de sincronização. Larga de propósito: parcelas futuras e transações
 // que passam de PENDING para POSTED aparecem fora dos últimos dias, e é isso
@@ -48,6 +49,15 @@ var COLS_FATURAS = [
 ];
 
 var COLS_STATUS = ['chave','valor'];
+
+// OF_AJUSTES é a ÚNICA aba OF_* escrita pelo app, não por este script. Mas o
+// app só sabe fazer clear/append — não sabe criar aba. Se ela não existir, a
+// leitura do app falha e as decisões do usuário não têm onde ser gravadas.
+// Por isso o script garante o cabeçalho aqui e nunca mais toca no conteúdo.
+var COLS_AJUSTES = [
+  'tipo','ref_id','dono','classificacao','obs','ignorada',
+  'mes_ref_override','apelido','fingerprint'
+];
 
 function _props() {
   return PropertiesService.getScriptProperties();

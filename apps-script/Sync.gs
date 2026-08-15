@@ -198,6 +198,7 @@ function testarConexao() {
   function p(s) { log.push(s); Logger.log(s); }
 
   p('=== TESTE DE CONEXÃO PLUGGY ===');
+  p(garantirAbas());
   p('Autenticando...');
   pluggyApiKey();
   p('✅ Autenticação OK');
@@ -333,6 +334,7 @@ function sincronizar(motivo) {
 
   var inicio = new Date();
   try {
+    garantirAbas();   // inclui OF_AJUSTES, sem a qual o app não lê nada de OF_*
     var hoje = new Date();
     var de = new Date(hoje.getTime() - JANELA_DIAS_ATRAS * 86400000);
     var ate = new Date(hoje.getTime() + JANELA_DIAS_FRENTE * 86400000);

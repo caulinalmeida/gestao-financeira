@@ -37,6 +37,27 @@ function aba(nome, colunas) {
   return s;
 }
 
+/**
+ * Cria as abas OF_* que ainda não existirem, com cabeçalho.
+ *
+ * OF_AJUSTES entra aqui apesar de ser escrita pelo app: o app só faz clear e
+ * append, não sabe criar aba. E como ele lê as cinco abas OF_* de uma vez, uma
+ * única aba faltando derruba a leitura inteira e a camada Open Finance some da
+ * tela sem erro visível. Criar o cabeçalho é tudo que fazemos — o conteúdo
+ * continua sendo só do app, a regra de um escritor por aba segue intacta.
+ */
+function garantirAbas() {
+  aba(ABA_TRANSACOES, COLS_TRANSACOES);
+  aba(ABA_CARTOES,    COLS_CARTOES);
+  aba(ABA_FATURAS,    COLS_FATURAS);
+  aba(ABA_STATUS,     COLS_STATUS);
+  aba(ABA_AJUSTES,    COLS_AJUSTES);   // cabeçalho só; conteúdo é do app
+  var msg = '✅ Abas OF_* prontas: ' + [ABA_TRANSACOES, ABA_CARTOES, ABA_FATURAS,
+                                        ABA_STATUS, ABA_AJUSTES].join(', ');
+  Logger.log(msg);
+  return msg;
+}
+
 /** Todas as linhas de dados (sem cabeçalho) como array de arrays. */
 function lerLinhas(sheet, numCols) {
   var ultima = sheet.getLastRow();
