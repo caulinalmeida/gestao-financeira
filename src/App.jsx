@@ -1253,6 +1253,10 @@ export default function App(){
       else if(r.dono==="Luanna")despLuanna+=v;
     });
     const cartoesMap={};
+    // Sem dono, a linha não pode ser atribuída a ninguém e fica de fora da
+    // conta. Contamos para avisar — antes, sumia em silêncio e o checklist
+    // fechava com um valor menor do que a fatura, sem explicação.
+    const semDono=allCartao.filter(r=>r.valor&&!r.dono);
     allCartao.forEach(r=>{
       if(!r.valor||!r.dono)return;
       const nome=r.cartao||"Outros";
@@ -1271,9 +1275,12 @@ export default function App(){
       const rows=[...g.fixos,...g.parcelados,...g.variaveis];
       return{nome,total:rows.reduce((a,r)=>a+r.valor,0),pagos:rows.filter(r=>pago[r.id]).reduce((a,r)=>a+r.valor,0),fixos:g.fixos,parcelados:g.parcelados,variaveis:g.variaveis};
     });
-    return{rendaCaulin,rendaLuanna,despCaulin,despLuanna,saldoCaulin,contasList,invList,totalFaturaCartoes};
+    return{rendaCaulin,rendaLuanna,despCaulin,despLuanna,saldoCaulin,contasList,invList,
+      totalFaturaCartoes,semDono,
+      valorSemDono:semDono.reduce((a,r)=>a+r.valor,0)};
   };
 
+  const syncFalhou=syncStatus.startsWith("erro")||syncStatus.includes("⚠️");
   const vPessoa=(v,dono,pessoa)=>dono==="Dividido"?v/2:dono===pessoa?v:0;
   const mesesComDados=Object.keys(dadosMes);
   // Anos que têm dados + o ano do mês selecionado, para o seletor sempre poder voltar.
@@ -1314,10 +1321,12 @@ export default function App(){
             </div>
           )}
           {syncStatus&&(
+            // syncFalhou cobre "erro ao..." e as mensagens com ⚠️. Antes olhava só
+            // o prefixo "erro" e uma falha de gravação aparecia em verde.
             <span style={{fontSize:11,padding:"3px 10px",borderRadius:20,whiteSpace:"nowrap",
-              background:syncStatus.startsWith("erro")?C.red50:C.tealSoft,
-              border:`1px solid ${syncStatus.startsWith("erro")?C.red100:C.teal100}`,
-              color:syncStatus.startsWith("erro")?C.red600:C.teal600}}>{syncStatus}</span>
+              background:syncFalhou?C.red50:C.tealSoft,
+              border:`1px solid ${syncFalhou?C.red100:C.teal100}`,
+              color:syncFalhou?C.red600:C.teal600}}>{syncStatus}</span>
           )}
         </div>
 
@@ -1613,7 +1622,8 @@ export default function App(){
 
         {/* CHECKLIST */}
         {tab===4&&(()=>{
-          const{rendaCaulin,rendaLuanna,despCaulin,despLuanna,saldoCaulin,contasList,invList,totalFaturaCartoes}=calcChecklist();
+          const{rendaCaulin,rendaLuanna,despCaulin,despLuanna,saldoCaulin,contasList,invList,
+            totalFaturaCartoes,semDono,valorSemDono}=calcChecklist();
           const rendaTotal=rendaCaulin+rendaLuanna;
 
           const CheckRow=({id,label,valor,sub,onClick})=>{
@@ -1651,6 +1661,21 @@ export default function App(){
                     <span>Total</span><span>{fmtBRL(modal.rows.reduce((a,r)=>a+vPessoa(r.valor,r.dono,modal.pessoa),0))}</span>
                   </div>
                 </Modal>
+              )}
+
+              {semDono.length>0&&(
+                <button className="gf-btn" onClick={()=>{setTab(0);setFaturaTab(1);}}
+                  style={{...card,width:"100%",textAlign:"left",cursor:"pointer",
+                    background:C.amber50,border:`1px solid ${C.amber100}`}}>
+                  <div style={{fontSize:13,fontWeight:600,color:C.amber600,marginBottom:4}}>
+                    ⚠️ {semDono.length} lançamento{semDono.length===1?"":"s"} sem dono ·
+                    {" "}{fmtBRL(valorSemDono)} fora da conta
+                  </div>
+                  <div style={{fontSize:12,color:C.amber600,opacity:0.8,lineHeight:1.5}}>
+                    Sem dono não dá para saber quem paga, então nada disso entra nos
+                    totais acima. Clique para classificar na Fatura.
+                  </div>
+                </button>
               )}
 
               {/* Summary cards */}
@@ -1706,10 +1731,12 @@ export default function App(){
                         return(
                           <div key={nome} style={{marginBottom:4}}>
                             <div style={{fontSize:11,color:C.textMuted,padding:"6px 0 2px",fontWeight:600}}>{nome}</div>
+                            {/* mesRef na chave: sem ele, marcar "Fixos" em agosto
+                                deixava setembro já marcado ao trocar de mês. */}
                             {[
-                              {key:`fixos-${nome}-${pessoa}`,label:"Fixos",rows:fixos},
-                              {key:`parc-${nome}-${pessoa}`,label:"Parcelados",rows:parcelados},
-                              {key:`var-${nome}-${pessoa}`,label:"Variáveis",rows:variaveis},
+                              {key:`fixos-${mesRef}-${nome}-${pessoa}`,label:"Fixos",rows:fixos},
+                              {key:`parc-${mesRef}-${nome}-${pessoa}`,label:"Parcelados",rows:parcelados},
+                              {key:`var-${mesRef}-${nome}-${pessoa}`,label:"Variáveis",rows:variaveis},
                             ].map(g=>{
                               const gRows=g.rows.filter(r=>vPessoa(r.valor,r.dono,pessoa)>0);
                               if(!gRows.length) return null;
