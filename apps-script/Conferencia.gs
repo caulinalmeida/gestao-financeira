@@ -139,20 +139,32 @@ function conferirFatura() {
       });
     }
 
-    // Toda PENDING deveria cair na fatura ainda não fechada. Se cair numa
-    // fatura já vencida, a atribuição está errada.
-    var pendPorMes = {};
+    // Transação EM ABERTO espalhada por vários meses é NORMAL — são parcelas
+    // futuras. O que seria erro é cair numa fatura JÁ FECHADA.
+    var mesesFechados = {};
+    ctx.faturas.forEach(function (b) {
+      if (!b || !b.dueDate) return;
+      var dv = new Date(b.dueDate);
+      if (!isNaN(dv.getTime())) mesesFechados[_mesKey(dv.getUTCFullYear(), dv.getUTCMonth())] = true;
+    });
+
+    var pendPorMes = {}, pendEmFechada = 0;
     txs.filter(function (t) { return t.status === 'PENDING'; }).forEach(function (t) {
       var d = _derivarMes(t, ctx.mapaFaturas, ctx.diaFech, ctx.diaVenc);
       pendPorMes[d.mes] = (pendPorMes[d.mes] || 0) + 1;
+      if (mesesFechados[d.mes]) pendEmFechada++;
     });
-    var mesesPend = Object.keys(pendPorMes).sort();
-    if (mesesPend.length > 1) {
+
+    if (Object.keys(pendPorMes).length) {
       p('');
-      p('   ⚠️  Transações EM ABERTO espalhadas em ' + mesesPend.length + ' meses: ' +
-        JSON.stringify(pendPorMes));
-      p('      Esperado: todas na próxima fatura a fechar.');
-      p('      Rode conferirFaturaDetalhe("' + mesesPend[0] + '") para investigar.');
+      p('   EM ABERTO por mês: ' + JSON.stringify(pendPorMes));
+      if (pendEmFechada) {
+        p('   ⚠️  ' + pendEmFechada + ' transação(ões) em aberto caíram numa fatura JÁ FECHADA.');
+        p('      Isso é erro de atribuição de mês.');
+      } else {
+        p('   ✅ Nenhuma em fatura já fechada. Espalhar por vários meses é normal:');
+        p('      são parcelas futuras.');
+      }
     }
   });
 
@@ -160,6 +172,121 @@ function conferirFatura() {
   p('════════════════════════════════════════════════════');
   p('Nada foi escrito. Se os totais batem com o app do banco, siga.');
 
+  return log.join('\n');
+}
+
+/**
+ * Investiga a diferença entre o nosso total e o do banco num mês específico.
+ *
+ * A fatura do banco pode incluir ENCARGOS (IOF, seguro, anuidade, juros) que
+ * não vêm como transação no extrato. O campo `financeCharges` do objeto bill
+ * lista esses lançamentos — é a primeira suspeita quando falta valor.
+ *
+ *   investigarMes("2026-06")
+ */
+function investigarMes(mesAlvo) {
+  var log = [];
+  function p(s) { log.push(s); Logger.log(s); }
+
+  if (!mesAlvo || !/^\d{4}-\d{2}$/.test(mesAlvo)) {
+    p('Use: investigarMes("2026-06")');
+    return log.join('\n');
+  }
+
+  var hoje = new Date();
+  var de = _isoData(new Date(hoje.getTime() - JANELA_DIAS_ATRAS * 86400000));
+  var ate = _isoData(new Date(hoje.getTime() + JANELA_DIAS_FRENTE * 86400000));
+
+  p('=== INVESTIGAÇÃO DE ' + mesAlvo + ' ===');
+
+  _contasComContexto().forEach(function (ctx) {
+    var c = ctx.conta;
+
+    var fatura = null;
+    ctx.faturas.forEach(function (b) {
+      if (!b || !b.dueDate) return;
+      var dv = new Date(b.dueDate);
+      if (isNaN(dv.getTime())) return;
+      if (_mesKey(dv.getUTCFullYear(), dv.getUTCMonth()) === mesAlvo) fatura = b;
+    });
+
+    p('');
+    p('💳 ' + (c.name || '?'));
+    if (!fatura) { p('   (sem fatura fechada com vencimento neste mês)'); return; }
+
+    p('   Fatura: vence ' + String(fatura.dueDate).slice(0, 10) +
+      ' · fecha ' + String(fatura.billClosingDate || '?').slice(0, 10));
+    p('   Total segundo o banco: ' + _fmt(fatura.totalAmount));
+
+    var txs = pluggyTransacoes(c.id, de, ate).filter(function (t) {
+      return _derivarMes(t, ctx.mapaFaturas, ctx.diaFech, ctx.diaVenc).mes === mesAlvo;
+    });
+
+    var compras = 0, pagtos = 0, estornos = 0;
+    txs.forEach(function (t) {
+      var v = Number(t.amount || 0), tp = _tipoTransacao(t);
+      if (tp === 'PAGAMENTO') pagtos += v;
+      else if (tp === 'ESTORNO') estornos += v;
+      else compras += v;
+    });
+
+    p('');
+    p('   NOSSO CÁLCULO (' + txs.length + ' transações):');
+    p('     compras:  ' + _fmt(compras));
+    p('     estornos: ' + _fmt(estornos));
+    p('     subtotal: ' + _fmt(compras + estornos) + '   ← comparado com o banco');
+    p('     (pagamento, fora do total: ' + _fmt(pagtos) + ')');
+
+    var dif = (compras + estornos) - Number(fatura.totalAmount || 0);
+    p('');
+    p('   DIFERENÇA: ' + _fmt(dif) + (Math.abs(dif) < 0.01 ? '  ✅ bate' : '  ⚠️'));
+
+    if (Math.abs(dif) >= 0.01) {
+      // Encargos entram no total da fatura mas costumam não vir como transação.
+      var enc = fatura.financeCharges || [];
+      p('');
+      p('   ENCARGOS NA FATURA (financeCharges): ' + enc.length);
+      var somaEnc = 0;
+      enc.forEach(function (e) {
+        somaEnc += Number(e.amount || 0);
+        p('     ' + String(e.type || e.name || '?').padEnd(28) + _fmt(e.amount));
+      });
+      if (enc.length) {
+        p('     ' + 'SOMA'.padEnd(28) + _fmt(somaEnc));
+        var difComEnc = dif + somaEnc;
+        p('');
+        p('   Diferença considerando encargos: ' + _fmt(difComEnc) +
+          (Math.abs(difComEnc) < 0.01 ? '  ✅ EXPLICADO pelos encargos' : '  ⚠️ ainda sobra'));
+      } else {
+        p('     (nenhum encargo listado — a diferença é outra coisa)');
+      }
+
+      // Campos extras do bill que podem explicar o resto.
+      p('');
+      p('   OUTROS CAMPOS DA FATURA:');
+      ['minimumPayment', 'totalAmountCurrencyCode', 'allowsInstallments'].forEach(function (k) {
+        if (fatura[k] !== undefined) p('     ' + k + ': ' + JSON.stringify(fatura[k]));
+      });
+      if (fatura.payments && fatura.payments.length) {
+        p('     payments: ' + fatura.payments.length + ' registro(s)');
+        fatura.payments.forEach(function (pg) {
+          p('       ' + String(pg.dueDate || pg.date || '?').slice(0, 10) + '  ' + _fmt(pg.amount || pg.valuePaid));
+        });
+      }
+
+      // As maiores transações ajudam a bater o olho com a fatura do app.
+      p('');
+      p('   MAIORES LANÇAMENTOS DO MÊS (para conferir no app do banco):');
+      txs.slice().sort(function (a, b) { return Math.abs(b.amount) - Math.abs(a.amount); })
+        .slice(0, 10).forEach(function (t) {
+          p('     ' + String(t.date).slice(0, 10) + '  ' +
+            String(t.description || '').slice(0, 30).padEnd(30) + _fmt(t.amount));
+        });
+    }
+  });
+
+  p('');
+  p('Nada foi escrito na planilha.');
   return log.join('\n');
 }
 
