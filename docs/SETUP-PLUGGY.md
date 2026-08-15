@@ -78,8 +78,25 @@ script** → **Adicionar propriedade do script**:
 |---|---|
 | `PLUGGY_CLIENT_ID` | *(do passo 3)* |
 | `PLUGGY_CLIENT_SECRET` | *(do passo 3)* |
+| `PLUGGY_ITEM_IDS` | IDs das conexões, separados por vírgula |
 
 Clique em **Salvar propriedades do script**.
+
+### Onde achar o `PLUGGY_ITEM_IDS`
+
+A API do Pluggy **não tem endpoint de listagem de items** — só `GET /items/{id}`.
+Por isso os IDs precisam ser informados na mão (uma vez só, por banco).
+
+1. Acesse `dashboard.pluggy.ai`
+2. Abra sua aplicação → seção **Items** / **Connections** / **Conexões**
+3. Copie o ID de cada conexão — é um UUID, tipo `3f9b1c2a-4d5e-6f70-8a9b-0c1d2e3f4a5b`
+4. Vários bancos? Separe por vírgula: `id-1,id-2`
+
+> Cartões do mesmo banco compartilham a mesma conexão, então **2 cartões Itaú
+> normalmente são UM único item ID** — o script encontra as duas contas sozinho.
+
+⚠️ Não confunda com **Application ID** nem com **Connector ID** (o do Itaú é um
+número curto). O item ID é o UUID da *sua* conexão.
 
 ### 4.3 Rodar uma função
 

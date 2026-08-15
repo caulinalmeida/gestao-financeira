@@ -71,33 +71,41 @@ function pluggyGet(caminho, params) {
 }
 
 /**
- * Descobre os items (conexões bancárias) a sincronizar.
+ * Items (conexões bancárias) a sincronizar.
  *
- * Tenta a listagem automática primeiro. Se a API não expuser esse endpoint,
- * cai para a propriedade PLUGGY_ITEM_IDS. Rodar testarConexao() mostra qual
- * caminho funcionou e imprime os IDs, caso você precise fixá-los na mão.
+ * A API do Pluggy NÃO expõe listagem de items — só `GET /items/{id}`. Por isso
+ * os IDs precisam vir da propriedade do script PLUGGY_ITEM_IDS.
+ * (Ainda tentamos `GET /items` por garantia, caso passe a existir; um 401/404
+ * ali é o comportamento normal e não indica credencial errada.)
  */
 function pluggyItems() {
   var manuais = _prop('PLUGGY_ITEM_IDS', false);
   if (manuais) {
-    var ids = manuais.split(',').map(function (s) { return s.trim(); }).filter(String);
+    var ids = manuais.split(/[,\s]+/).map(function (s) { return s.trim(); }).filter(String);
     if (ids.length) {
       return { origem: 'PLUGGY_ITEM_IDS', ids: ids };
     }
   }
 
   var r = pluggyGet('/items');
-  if (r.ok && r.body && r.body.results) {
+  if (r.ok && r.body && r.body.results && r.body.results.length) {
     return {
-      origem: 'descoberta automática (GET /items)',
+      origem: 'GET /items',
       ids: r.body.results.map(function (it) { return it.id; })
     };
   }
 
   throw new Error(
-    'Não consegui listar os items automaticamente (HTTP ' + r.code + ').\n' +
-    'Adicione a propriedade do script PLUGGY_ITEM_IDS com os IDs separados por vírgula.\n' +
-    'Você encontra os IDs em dashboard.pluggy.ai → Applications → Items.'
+    'Falta configurar PLUGGY_ITEM_IDS.\n\n' +
+    'A API do Pluggy não tem endpoint de listagem de items (o HTTP ' + r.code +
+    ' acima é esperado), então os IDs precisam ser informados.\n\n' +
+    'COMO OBTER:\n' +
+    '  1. Acesse dashboard.pluggy.ai\n' +
+    '  2. Abra sua aplicação → seção Items / Connections / Conexões\n' +
+    '  3. Copie o ID de cada conexão (formato UUID, ex.: 3f9b1c2a-...-8d7e)\n' +
+    '  4. ⚙ Configurações do projeto → Propriedades do script\n' +
+    '     PLUGGY_ITEM_IDS = os IDs separados por vírgula\n\n' +
+    'Como os 2 cartões são do mesmo banco, provavelmente é UM único ID.'
   );
 }
 

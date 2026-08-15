@@ -98,20 +98,53 @@ function testarConexao() {
   p('✅ Autenticação OK');
 
   var items = pluggyItems();
-  p('Items encontrados via ' + items.origem + ': ' + items.ids.length);
+  p('Items configurados via ' + items.origem + ': ' + items.ids.length);
 
-  var totalCartoes = 0;
+  var totalCartoes = 0, comProblema = 0;
   items.ids.forEach(function (itemId) {
-    var r = pluggyItem(itemId);
-    var st = r.ok && r.body ? r.body.status : 'DESCONHECIDO';
-    var conector = r.ok && r.body && r.body.connector ? r.body.connector.name : '?';
     p('');
     p('📦 Item ' + itemId);
+
+    var r = pluggyItem(itemId);
+    if (!r.ok) {
+      comProblema++;
+      p('   ❌ HTTP ' + r.code);
+      p('   Resposta: ' + JSON.stringify(r.body).slice(0, 300));
+      if (r.code === 401 || r.code === 403) {
+        p('   → 401/403 num ID válido normalmente significa que falta concluir a');
+        p('     autorização OAuth do Meu Pluggy para esta aplicação.');
+        p('     Refaça em dashboard.pluggy.ai (é uma vez por banco conectado).');
+      } else if (r.code === 404) {
+        p('   → ID não encontrado. Confira se copiou o item ID correto');
+        p('     (não confundir com application ID ou connector ID).');
+      }
+      return;
+    }
+
+    var st = r.body.status || 'DESCONHECIDO';
+    var conector = r.body.connector ? r.body.connector.name : '?';
     p('   Instituição: ' + conector);
     p('   Status: ' + st + (st === 'UPDATED' ? ' ✅' : ' ⚠️'));
+    if (st === 'LOGIN_ERROR' || st === 'OUTDATED') {
+      comProblema++;
+      p('   → Reconecte em meu.pluggy.ai antes de sincronizar.');
+    }
+    if (r.body.lastUpdatedAt) p('   Última atualização no Pluggy: ' + r.body.lastUpdatedAt);
 
-    var contas = pluggyContasCredito(itemId);
+    var contas;
+    try {
+      contas = pluggyContasCredito(itemId);
+    } catch (e) {
+      comProblema++;
+      p('   ❌ ' + e.message);
+      return;
+    }
+
     p('   Cartões de crédito: ' + contas.length);
+    if (!contas.length) {
+      p('   ⚠️  Nenhuma conta CREDIT. Se esperava cartões, verifique no');
+      p('      meu.pluggy.ai se o compartilhamento inclui cartão de crédito.');
+    }
     contas.forEach(function (c) {
       totalCartoes++;
       var cd = c.creditData || {};
@@ -121,13 +154,44 @@ function testarConexao() {
       p('        limite: ' + (cd.creditLimit || '?') +
         ' | fecha: ' + (cd.balanceCloseDate || '?') +
         ' | vence: ' + (cd.balanceDueDate || '?'));
+
+      // Amostra pequena: confirma que dá para ler transação e que o mês
+      // está sendo derivado por uma regra confiável (BILL/FORECAST).
+      try {
+        var hoje = new Date();
+        var de = _isoData(new Date(hoje.getTime() - 45 * 86400000));
+        var ate = _isoData(new Date(hoje.getTime() + 45 * 86400000));
+        var txs = pluggyTransacoes(c.id, de, ate);
+        var faturas = pluggyFaturas(c.id);
+        var mapa = {};
+        faturas.forEach(function (b) { if (b && b.id && b.dueDate) mapa[b.id] = b.dueDate; });
+        var diaFech = cd.balanceCloseDate ? new Date(cd.balanceCloseDate).getUTCDate() : null;
+
+        var origens = {}, meses = {};
+        txs.forEach(function (t) {
+          var d = _derivarMes(t, mapa, diaFech);
+          origens[d.origem] = (origens[d.origem] || 0) + 1;
+          meses[d.mes] = (meses[d.mes] || 0) + 1;
+        });
+        p('        transações (±45d): ' + txs.length + ' | faturas: ' + faturas.length);
+        p('        regra do mês: ' + (JSON.stringify(origens) || '{}'));
+        p('        meses: ' + JSON.stringify(meses));
+        if (origens.ESTIMADO && !origens.BILL && !origens.FORECAST) {
+          p('        ⚠️  Só ESTIMADO — o conector não entrega billId nem previsão.');
+        }
+      } catch (e) {
+        p('        ⚠️  não consegui ler transações: ' + e.message);
+      }
     });
   });
 
   p('');
-  p('=== RESUMO: ' + items.ids.length + ' item(s), ' + totalCartoes + ' cartão(ões) ===');
-  p('Nada foi escrito na planilha. Se os cartões acima estão certos,');
-  p('rode sincronizarAgora() e depois criarGatilhos().');
+  p('=== RESUMO: ' + items.ids.length + ' item(s), ' + totalCartoes + ' cartão(ões), ' +
+    comProblema + ' problema(s) ===');
+  p('Nada foi escrito na planilha.');
+  if (!comProblema && totalCartoes) {
+    p('Tudo certo. Pode seguir para simularMigracaoMeses().');
+  }
 
   return log.join('\n');
 }
