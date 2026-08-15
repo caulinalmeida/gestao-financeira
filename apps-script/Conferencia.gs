@@ -317,7 +317,8 @@ function conferirFaturaDetalhe(mesAlvo) {
 
     var soma = 0;
     txs.forEach(function (t) {
-      soma += Number(t.amount || 0);
+      var tp = _tipoTransacao(t);
+      if (tp !== 'PAGAMENTO') soma += Number(t.amount || 0);
       var d = _derivarMes(t, ctx.mapaFaturas, ctx.diaFech, ctx.diaVenc);
       var mm = t.creditCardMetadata || {};
       var parc = mm.totalInstallments > 1
@@ -325,12 +326,30 @@ function conferirFaturaDetalhe(mesAlvo) {
       p('  ' + String(t.date).slice(0, 10) + '  ' +
         String(t.description || '').slice(0, 30).padEnd(30) +
         _fmt(t.amount).padStart(12) + '  ' +
-        String(t.status).padEnd(8) + d.origem + parc);
+        String(t.status).padEnd(8) + String(d.origem).padEnd(9) +
+        (tp === 'PAGAMENTO' ? '(fora do total)' : parc));
     });
-    p('  ' + ''.padEnd(30) + '  ── TOTAL: ' + _fmt(soma));
+
+    // Total do banco lado a lado, para achar o lançamento que falta.
+    var banco = null;
+    ctx.faturas.forEach(function (b) {
+      if (!b || !b.dueDate) return;
+      var dv = new Date(b.dueDate);
+      if (!isNaN(dv.getTime()) && _mesKey(dv.getUTCFullYear(), dv.getUTCMonth()) === mesAlvo) {
+        banco = Number(b.totalAmount || 0);
+      }
+    });
+
+    p('  ' + ''.padEnd(30) + '  ── NOSSO TOTAL: ' + _fmt(soma));
+    if (banco !== null) {
+      p('  ' + ''.padEnd(30) + '     BANCO:       ' + _fmt(banco));
+      var dif = soma - banco;
+      p('  ' + ''.padEnd(30) + '     DIFERENÇA:   ' + _fmt(dif) +
+        (Math.abs(dif) < 0.01 ? '  ✅' : '  ⚠️ procure na fatura do app um lançamento de ' + _fmt(-dif)));
+    }
   });
 
   p('');
-  p('Compare o TOTAL com a fatura correspondente no app do Itaú.');
+  p('Compare a lista com a fatura no app do Itaú para achar o que falta.');
   return log.join('\n');
 }

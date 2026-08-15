@@ -38,9 +38,10 @@ function investigarUltimaFatura()    { return investigarMes(_mesKeyRelativo(0));
 function investigarPenultimaFatura() { return investigarMes(_mesKeyRelativo(-1)); }
 function investigarFatura3MesesAtras(){ return investigarMes(_mesKeyRelativo(-2)); }
 
-function detalharUltimaFatura()      { return conferirFaturaDetalhe(_mesKeyRelativo(0)); }
-function detalharPenultimaFatura()   { return conferirFaturaDetalhe(_mesKeyRelativo(-1)); }
-function detalharFaturaEmAberto()    { return conferirFaturaDetalhe(_mesKeyRelativo(1)); }
+function detalharUltimaFatura()        { return conferirFaturaDetalhe(_mesKeyRelativo(0)); }
+function detalharPenultimaFatura()     { return conferirFaturaDetalhe(_mesKeyRelativo(-1)); }
+function detalharFatura3MesesAtras()   { return conferirFaturaDetalhe(_mesKeyRelativo(-2)); }
+function detalharFaturaEmAberto()      { return conferirFaturaDetalhe(_mesKeyRelativo(1)); }
 
 // ── (b) Mês específico, via propriedade MES_ALVO ─────────────────────────────
 

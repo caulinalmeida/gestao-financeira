@@ -88,6 +88,18 @@ function gravarCartoes(cartoes) {
   escreverLinhas(s, linhas, COLS_CARTOES.length);
 }
 
+// ── OF_FATURAS ───────────────────────────────────────────────────────────────
+
+function gravarFaturas(faturas) {
+  var s = aba(ABA_FATURAS, COLS_FATURAS);
+  var agora = new Date();
+  var linhas = faturas.map(function (f) {
+    return [f.account_id, f.mes_ref, f.vencimento, f.fechamento, f.total_banco, agora];
+  });
+  linhas.sort(function (a, b) { return String(b[1]).localeCompare(String(a[1])); });
+  escreverLinhas(s, linhas, COLS_FATURAS.length);
+}
+
 // ── OF_TRANSACOES ────────────────────────────────────────────────────────────
 
 /**

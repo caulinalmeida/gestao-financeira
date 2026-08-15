@@ -339,7 +339,7 @@ function sincronizar(motivo) {
     var dataDe = _isoData(de), dataAte = _isoData(ate);
 
     var items = pluggyItems();
-    var cartoes = [], transacoes = [], accountIds = [], avisos = [];
+    var cartoes = [], transacoes = [], accountIds = [], avisos = [], faturasOut = [];
 
     items.ids.forEach(function (itemId) {
       var info = pluggyItem(itemId);
@@ -375,6 +375,21 @@ function sincronizar(motivo) {
         });
         accountIds.push(c.id);
 
+        // Total oficial de cada fatura, para o app poder confrontar o que
+        // calcula com o que o banco diz.
+        faturas.forEach(function (b) {
+          if (!b || !b.dueDate) return;
+          var dv = new Date(b.dueDate);
+          if (isNaN(dv.getTime())) return;
+          faturasOut.push({
+            account_id: c.id,
+            mes_ref: _mesKey(dv.getUTCFullYear(), dv.getUTCMonth()),
+            vencimento: String(b.dueDate).slice(0, 10),
+            fechamento: b.billClosingDate ? String(b.billClosingDate).slice(0, 10) : '',
+            total_banco: Number(b.totalAmount || 0)
+          });
+        });
+
         pluggyTransacoes(c.id, dataDe, dataAte).forEach(function (tx) {
           transacoes.push(_mapearTransacao(tx, c, mapaFaturas, diaFech, diaVenc));
         });
@@ -382,6 +397,7 @@ function sincronizar(motivo) {
     });
 
     gravarCartoes(cartoes);
+    gravarFaturas(faturasOut);
     var res = gravarTransacoes(transacoes, accountIds, dataDe, dataAte);
 
     var segundos = Math.round((new Date() - inicio) / 1000);

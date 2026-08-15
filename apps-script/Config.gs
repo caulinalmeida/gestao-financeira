@@ -16,6 +16,7 @@ var PLUGGY_API = 'https://api.pluggy.ai';
 // Nomes das abas. OF_* são as abas novas do Open Finance.
 var ABA_TRANSACOES = 'OF_TRANSACOES';
 var ABA_CARTOES    = 'OF_CARTOES';
+var ABA_FATURAS    = 'OF_FATURAS';
 var ABA_STATUS     = 'OF_STATUS';
 
 // Janela de sincronização. Larga de propósito: parcelas futuras e transações
@@ -36,6 +37,14 @@ var COLS_TRANSACOES = [
 var COLS_CARTOES = [
   'account_id','item_id','nome','ultimos_digitos','limite',
   'fechamento','vencimento','atualizado_em'
+];
+
+// Total oficial da fatura segundo o banco. Guardar isso permite ao app mostrar
+// "confere ✅" ou "difere R$ X ⚠️" por cartão/mês — descobrimos com dados reais
+// que o Pluggy pode entregar menos transações do que o total da fatura em meses
+// antigos, e sem esse confronto o erro passaria despercebido.
+var COLS_FATURAS = [
+  'account_id','mes_ref','vencimento','fechamento','total_banco','atualizado_em'
 ];
 
 var COLS_STATUS = ['chave','valor'];
