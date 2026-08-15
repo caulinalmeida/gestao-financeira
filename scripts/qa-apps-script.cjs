@@ -177,6 +177,53 @@ const faltando = sandbox.COLS_TRANSACOES.filter(c => c !== 'atualizado_em' && !c
 ok('toda coluna de OF_TRANSACOES é preenchida por _mapearTransacao',
    faltando.length === 0, 'faltando: ' + faltando.join(', '));
 
+// ── 9. Gerador de dados de exemplo ───────────────────────────────────────────
+console.log('\n=== 9. popularDadosExemplo (fixtures do Módulo 2) ===');
+const escritas = {};
+sandbox.aba = (nome) => ({ __nome: nome });
+sandbox.escreverLinhas = (sheet, linhas) => { escritas[sheet.__nome] = linhas; };
+sandbox.lerLinhas = () => [];
+sandbox.statusGravar = () => {};
+try {
+  sandbox.popularDadosExemplo();
+  const txs = escritas['OF_TRANSACOES'] || [];
+  const cards = escritas['OF_CARTOES'] || [];
+
+  ok('gerou transações', txs.length > 20, 'gerou ' + txs.length);
+  ok('gerou 2 cartões', cards.length === 2, 'gerou ' + cards.length);
+  ok('toda linha tem o nº de colunas do contrato',
+     txs.every(l => l.length === sandbox.COLS_TRANSACOES.length));
+  ok('ids únicos', new Set(txs.map(l => l[0])).size === txs.length);
+
+  const iMes = sandbox.COLS_TRANSACOES.indexOf('mes_ref');
+  const iStatus = sandbox.COLS_TRANSACOES.indexOf('status');
+  const iValor = sandbox.COLS_TRANSACOES.indexOf('valor');
+  const iData = sandbox.COLS_TRANSACOES.indexOf('data');
+  const iOrigem = sandbox.COLS_TRANSACOES.indexOf('origem_mes');
+
+  ok('todo mes_ref no formato ANO-MÊS',
+     txs.every(l => /^\d{4}-\d{2}$/.test(l[iMes])),
+     txs.filter(l => !/^\d{4}-\d{2}$/.test(l[iMes])).map(l => l[iMes]).join(','));
+  ok('toda data no formato ISO',
+     txs.every(l => /^\d{4}-\d{2}-\d{2}$/.test(l[iData])),
+     txs.filter(l => !/^\d{4}-\d{2}-\d{2}$/.test(l[iData])).map(l => l[iData]).join(','));
+  ok('tem POSTED e PENDING (fatura fechada e aberta)',
+     txs.some(l => l[iStatus] === 'POSTED') && txs.some(l => l[iStatus] === 'PENDING'));
+  ok('tem valor negativo (estorno/pagamento)', txs.some(l => l[iValor] < 0));
+  ok('tem compra parcelada em andamento',
+     txs.some(l => l[sandbox.COLS_TRANSACOES.indexOf('parcela_total')] > 1));
+  ok('cobre as 3 regras de mês',
+     new Set(txs.map(l => l[iOrigem])).size === 3,
+     [...new Set(txs.map(l => l[iOrigem]))].join(','));
+  ok('todo valor é número', txs.every(l => typeof l[iValor] === 'number'));
+
+  const meses = [...new Set(txs.map(l => l[iMes]))].sort();
+  ok('cobre 3 meses distintos', meses.length === 3, meses.join(','));
+  console.log('     meses gerados: ' + meses.join(', '));
+} catch (e) {
+  ok('popularDadosExemplo executa', false, e.message);
+}
+
 console.log('\n' + '='.repeat(52));
 console.log('RESULTADO: ' + passes + ' passaram, ' + falhas + ' falharam');
 console.log('='.repeat(52));
