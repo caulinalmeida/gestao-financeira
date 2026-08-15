@@ -53,25 +53,78 @@ O Meu Pluggy é **gratuito por tempo indeterminado** para uso pessoal, sem limit
 
 ---
 
-## Passo 4 — Apps Script (faremos junto, depois que eu subir o código)
+## Passo 4 — Instalar o Apps Script
 
-Vou gerar a pasta `apps-script/` no repo. Quando estiver pronta, o fluxo é:
+O código está em [`apps-script/`](../apps-script/).
+
+### 4.1 Criar os arquivos
 
 1. Na planilha: **Extensões → Apps Script**
-2. Colar os arquivos que eu gerar
-3. **Configurações do projeto → Propriedades do script → Adicionar propriedade:**
+2. Barra lateral esquerda, em **Arquivos**, clique em **`+` → Script**
+3. Nomeie **sem a extensão** (digite `Config`, vira `Config.gs` sozinho)
+4. Repita para os 6: `Config`, `Pluggy`, `Sheets`, `Sync`, `Migracao`, `Triggers`
+5. Cole o conteúdo de cada um e salve com **Ctrl+S**
+6. Apague o `Código.gs` que veio por padrão
 
-   | Propriedade | Valor |
-   |---|---|
-   | `PLUGGY_CLIENT_ID` | *(do passo 3)* |
-   | `PLUGGY_CLIENT_SECRET` | *(do passo 3)* |
+> O `appsscript.json` é opcional — o Apps Script deduz as permissões a partir do
+> código. Só aparece no editor se você habilitar em Configurações.
 
-4. Rodar a função `testarConexao()` — ela valida as credenciais e lista os cartões encontrados, sem escrever nada
-5. Rodar `criarGatilhos()` — configura o sync diário e o poller de "atualizar agora"
+### 4.2 Guardar as credenciais
 
-Na primeira execução o Google vai pedir autorização do script (tela de "app não verificado" → *Avançado* → *Acessar projeto*). É seu próprio script na sua conta, é esperado.
+**⚙ Configurações do projeto** (engrenagem na barra esquerda) → **Propriedades do
+script** → **Adicionar propriedade do script**:
 
-- [ ] Aguardando o código
+| Propriedade | Valor |
+|---|---|
+| `PLUGGY_CLIENT_ID` | *(do passo 3)* |
+| `PLUGGY_CLIENT_SECRET` | *(do passo 3)* |
+
+Clique em **Salvar propriedades do script**.
+
+### 4.3 Rodar uma função
+
+⚠️ **O dropdown de funções só lista o que está no arquivo ABERTO.** Abra o arquivo
+certo antes de procurar a função no seletor.
+
+Barra do topo: `[▷ Executar] [🐞 Depurar] [ nomeDaFuncao ▼ ] [Registro de execução]`
+
+Abra o arquivo → escolha a função no dropdown → **▷ Executar**.
+A saída aparece no painel **Registro de execução**, embaixo.
+
+### 4.4 Autorizar (só na primeira vez)
+
+1. **Autorização necessária** → **Revisar permissões**
+2. Escolha sua conta Google
+3. **"O Google não verificou este app"** → clique em **Avançado**
+4. **Acessar Gestão Financeira (não seguro)** → **Permitir**
+
+É o seu próprio script, na sua conta. O aviso é esperado.
+
+### 4.5 Ordem de execução
+
+Uma de cada vez, conferindo o log antes de seguir:
+
+| # | Função | Arquivo | Escreve? |
+|---|---|---|---|
+| 1 | `testarConexao` | `Sync.gs` | não — só diagnóstico |
+| 2 | `simularMigracaoMeses` | `Migracao.gs` | não — só prévia |
+| 3 | `migrarMeses` | `Migracao.gs` | **sim** |
+| 4 | `sincronizarAgora` | `Sync.gs` | **sim** |
+| 5 | `criarGatilhos` | `Triggers.gs` | — |
+
+- [ ] `testarConexao()` listou os cartões corretamente
+- [ ] Migração simulada e aplicada
+- [ ] Primeira sincronização concluída
+- [ ] Gatilhos criados
+
+### Se der erro
+
+| Erro | Causa provável |
+|---|---|
+| `Propriedade do script "..." não configurada` | Faltou salvar no passo 4.2 |
+| `Falha na autenticação (HTTP 401/403)` | Client ID ou Secret errado |
+| `Não consegui listar os items automaticamente` | Adicione a propriedade `PLUGGY_ITEM_IDS` com os IDs separados por vírgula (dashboard.pluggy.ai → Applications → Items) |
+| Função não aparece no dropdown | Arquivo errado aberto, ou faltou salvar |
 
 ---
 
