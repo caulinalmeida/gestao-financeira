@@ -115,6 +115,25 @@ ok('billId desconhecido cai no fallback', r.origem === 'ESTIMADO');
 r = dm({ date: '2026-08-20T00:00:00Z', creditCardMetadata: { billForecastDate: 'lixo' } }, {}, 15);
 ok('billForecastDate malformado é rejeitado', r.origem === 'ESTIMADO');
 
+// ── 5b. Dia de fechamento (Itaú devolve balanceCloseDate nulo) ──────────────
+console.log('\n=== 5b. _diaFechamento ===');
+const df = sandbox._diaFechamento;
+eq('usa balanceCloseDate quando existe',
+   df({ balanceCloseDate: '2026-08-18T00:00:00Z' }, []), 18);
+eq('deriva das faturas quando balanceCloseDate é nulo',
+   df({ balanceCloseDate: null },
+      [{ billClosingDate: '2026-07-12T00:00:00Z' }, { billClosingDate: '2026-08-12T00:00:00Z' }]), 12);
+eq('escolhe o dia mais frequente (fechamento cai em fim de semana)',
+   df({}, [{ billClosingDate: '2026-06-12T00:00:00Z' },
+            { billClosingDate: '2026-07-12T00:00:00Z' },
+            { billClosingDate: '2026-08-14T00:00:00Z' }]), 12);
+eq('sem nada devolve null', df({}, []), null);
+eq('creditData nulo é seguro', df(null, []), null);
+eq('ignora billClosingDate inválido',
+   df({}, [{ billClosingDate: 'lixo' }, { billClosingDate: '2026-08-09T00:00:00Z' }]), 9);
+ok('conta sem fechamento não quebra a derivação do mês',
+   sandbox._derivarMes({ date: '2026-08-20T00:00:00Z', creditCardMetadata: {} }, {}, null).mes === '2026-08');
+
 // ── 6. Mapeamento da transação ───────────────────────────────────────────────
 console.log('\n=== 6. _mapearTransacao ===');
 const tx = {

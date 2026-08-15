@@ -82,21 +82,37 @@ script** → **Adicionar propriedade do script**:
 
 Clique em **Salvar propriedades do script**.
 
-### Onde achar o `PLUGGY_ITEM_IDS`
+### Onde achar o `PLUGGY_ITEM_IDS` ✅ testado
 
 A API do Pluggy **não tem endpoint de listagem de items** — só `GET /items/{id}`.
-Por isso os IDs precisam ser informados na mão (uma vez só, por banco).
+Por isso o ID precisa ser informado na mão (uma vez só, por banco).
 
-1. Acesse `dashboard.pluggy.ai`
-2. Abra sua aplicação → seção **Items** / **Connections** / **Conexões**
-3. Copie o ID de cada conexão — é um UUID, tipo `3f9b1c2a-4d5e-6f70-8a9b-0c1d2e3f4a5b`
-4. Vários bancos? Separe por vírgula: `id-1,id-2`
+**Jeito mais fácil, confirmado funcionando:**
 
-> Cartões do mesmo banco compartilham a mesma conexão, então **2 cartões Itaú
-> normalmente são UM único item ID** — o script encontra as duas contas sozinho.
+1. Acesse `meu.pluggy.ai`
+2. Abra a conexão do banco
+3. **O UUID está na própria URL:**
+   ```
+   https://meu.pluggy.ai/connections/3968198b-1213-46ca-aba3-f6e39d574082
+                                     └──────────── é este ────────────┘
+   ```
+4. Cole em `PLUGGY_ITEM_IDS`. Vários bancos? Separe por vírgula: `id-1,id-2`
 
-⚠️ Não confunda com **Application ID** nem com **Connector ID** (o do Itaú é um
-número curto). O item ID é o UUID da *sua* conexão.
+> Cartões do mesmo banco compartilham a mesma conexão: **2 cartões Itaú são UM
+> único item ID** — o script encontra as duas contas sozinho.
+
+⚠️ Não confunda com **Application ID** nem com **Connector ID** (número curto).
+
+### Sobre o trial expirado do dashboard
+
+O acesso via **Meu Pluggy continua funcionando** depois que o trial de 15 dias
+expira — é gratuito por tempo indeterminado para uso pessoal.
+
+Ignore no dashboard: *"Solicitar Acesso à Produção"*, *"Testar com dados reais"*
+e *"Complete a due diligence"*. Esses são o caminho comercial, para conectar
+bancos diretamente pela sua aplicação. Não é o que fazemos aqui — usamos o
+**conector Meu Pluggy (nº 200)**, que funciona como proxy para os bancos que
+você já conectou no `meu.pluggy.ai`.
 
 ### 4.3 Rodar uma função
 

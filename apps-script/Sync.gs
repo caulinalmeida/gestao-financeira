@@ -28,6 +28,35 @@ function _normalizar(s) {
 }
 
 /**
+ * Dia de fechamento do cartão.
+ *
+ * O conector do Itaú via Meu Pluggy devolve `balanceCloseDate` NULO, então não
+ * dá para depender só dele. Quando falta, derivamos do `billClosingDate` das
+ * faturas — que é dado real do banco, não chute.
+ */
+function _diaFechamento(cd, faturas) {
+  if (cd && cd.balanceCloseDate) {
+    var d = new Date(cd.balanceCloseDate);
+    if (!isNaN(d.getTime())) return d.getUTCDate();
+  }
+
+  var dias = (faturas || [])
+    .map(function (b) { return b && b.billClosingDate ? new Date(b.billClosingDate) : null; })
+    .filter(function (d) { return d && !isNaN(d.getTime()); })
+    .map(function (d) { return d.getUTCDate(); });
+
+  if (!dias.length) return null;
+
+  // Dia mais frequente entre as faturas (robusto a fechamento em fim de semana).
+  var cont = {}, melhor = null, max = 0;
+  dias.forEach(function (x) {
+    cont[x] = (cont[x] || 0) + 1;
+    if (cont[x] > max) { max = cont[x]; melhor = x; }
+  });
+  return melhor;
+}
+
+/**
  * Em que fatura a transação cai. Três estratégias, da mais confiável para a
  * menos — `origem_mes` registra qual foi usada, o que torna o QA possível.
  *
@@ -151,33 +180,48 @@ function testarConexao() {
       p('     💳 ' + (c.name || c.marketingName || '(sem nome)') +
         '  final ' + (c.number ? String(c.number).slice(-4) : '????'));
       p('        accountId: ' + c.id);
-      p('        limite: ' + (cd.creditLimit || '?') +
-        ' | fecha: ' + (cd.balanceCloseDate || '?') +
-        ' | vence: ' + (cd.balanceDueDate || '?'));
 
-      // Amostra pequena: confirma que dá para ler transação e que o mês
-      // está sendo derivado por uma regra confiável (BILL/FORECAST).
+      // Amostra: confirma que dá para ler transação e que o mês está sendo
+      // derivado por uma regra confiável (BILL/FORECAST) e não por chute.
       try {
         var hoje = new Date();
         var de = _isoData(new Date(hoje.getTime() - 45 * 86400000));
         var ate = _isoData(new Date(hoje.getTime() + 45 * 86400000));
-        var txs = pluggyTransacoes(c.id, de, ate);
         var faturas = pluggyFaturas(c.id);
         var mapa = {};
         faturas.forEach(function (b) { if (b && b.id && b.dueDate) mapa[b.id] = b.dueDate; });
-        var diaFech = cd.balanceCloseDate ? new Date(cd.balanceCloseDate).getUTCDate() : null;
+        var diaFech = _diaFechamento(cd, faturas);
 
-        var origens = {}, meses = {};
+        p('        limite: ' + (cd.creditLimit || '?') +
+          ' | vence: ' + (cd.balanceDueDate || '?'));
+        p('        dia de fechamento: ' + (diaFech || '❌ desconhecido') +
+          (cd.balanceCloseDate ? ' (da conta)' : (diaFech ? ' (derivado das faturas)' : '')));
+
+        var txs = pluggyTransacoes(c.id, de, ate);
+        var origens = {}, meses = {}, pend = 0, negativos = 0, parcelados = 0;
         txs.forEach(function (t) {
           var d = _derivarMes(t, mapa, diaFech);
           origens[d.origem] = (origens[d.origem] || 0) + 1;
           meses[d.mes] = (meses[d.mes] || 0) + 1;
+          if (t.status === 'PENDING') pend++;
+          if (t.amount < 0) negativos++;
+          var mm = t.creditCardMetadata || {};
+          if (mm.totalInstallments > 1) parcelados++;
         });
-        p('        transações (±45d): ' + txs.length + ' | faturas: ' + faturas.length);
-        p('        regra do mês: ' + (JSON.stringify(origens) || '{}'));
+
+        p('        transações (±45d): ' + txs.length +
+          '  | faturas: ' + faturas.length +
+          '  | em aberto: ' + pend +
+          '  | negativas: ' + negativos +
+          '  | parceladas: ' + parcelados);
+        p('        regra do mês: ' + JSON.stringify(origens));
         p('        meses: ' + JSON.stringify(meses));
-        if (origens.ESTIMADO && !origens.BILL && !origens.FORECAST) {
-          p('        ⚠️  Só ESTIMADO — o conector não entrega billId nem previsão.');
+
+        if (!txs.length) {
+          p('        ⚠️  Nenhuma transação no período.');
+        } else if (origens.ESTIMADO && !origens.BILL && !origens.FORECAST) {
+          p('        ⚠️  Só ESTIMADO — sem billId nem previsão do Pluggy.');
+          if (!diaFech) p('        ⚠️  E sem dia de fechamento: o mês vira o da compra.');
         }
       } catch (e) {
         p('        ⚠️  não consegui ler transações: ' + e.message);
@@ -233,7 +277,15 @@ function sincronizar(motivo) {
 
       pluggyContasCredito(itemId).forEach(function (c) {
         var cd = c.creditData || {};
-        var diaFech = cd.balanceCloseDate ? new Date(cd.balanceCloseDate).getUTCDate() : null;
+
+        // Faturas primeiro: além do mapa billId→vencimento, elas são a fonte
+        // do dia de fechamento quando balanceCloseDate vem nulo (caso do Itaú).
+        var faturas = pluggyFaturas(c.id);
+        var mapaFaturas = {};
+        faturas.forEach(function (b) {
+          if (b && b.id && b.dueDate) mapaFaturas[b.id] = b.dueDate;
+        });
+        var diaFech = _diaFechamento(cd, faturas);
 
         cartoes.push({
           account_id: c.id,
@@ -241,16 +293,10 @@ function sincronizar(motivo) {
           nome: c.name || c.marketingName || conector,
           ultimos_digitos: c.number ? String(c.number).slice(-4) : '',
           limite: cd.creditLimit || '',
-          fechamento: cd.balanceCloseDate || '',
+          fechamento: cd.balanceCloseDate || (diaFech ? 'dia ' + diaFech + ' (das faturas)' : ''),
           vencimento: cd.balanceDueDate || ''
         });
         accountIds.push(c.id);
-
-        // billId → dueDate, para saber em que fatura cada transação caiu.
-        var mapaFaturas = {};
-        pluggyFaturas(c.id).forEach(function (b) {
-          if (b && b.id && b.dueDate) mapaFaturas[b.id] = b.dueDate;
-        });
 
         pluggyTransacoes(c.id, dataDe, dataAte).forEach(function (tx) {
           transacoes.push(_mapearTransacao(tx, c, mapaFaturas, diaFech));
