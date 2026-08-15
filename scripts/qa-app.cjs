@@ -45,6 +45,7 @@ const alvos = [
   'function rowToAjuste(', 'function ajusteToRow(', 'function ajusteVazio(',
   'function nomeCartao(', 'function classificaAuto(',
   'function mergeFatura(', 'function totalFatura(',
+  'function mesProximo(', 'function chaveCompra(', 'function projetarParcelas(',
 ];
 const pedacos = [];
 let faltou = [];
@@ -195,6 +196,169 @@ eq('linha do Sheets → transação: valor', lido.valor, 57.9);
 eq('  mês', lido.mesRef, '2026-08');
 eq('  parcela', [lido.parcelaNum, lido.parcelaTotal], [3, 12]);
 eq('  natureza', lido.natureza, 'COMPRA');
+
+// ── 10. Projeção de parcelas (Módulo 4) ──────────────────────────────────────
+console.log('\n=== 10. projetarParcelas ===');
+
+let seq = 0;
+function txP(o) {
+  return Object.assign({
+    id: 'tx-p' + (++seq), accountId: 'acc-1', mesRef: '2026-08', origemMes: 'BILL',
+    natureza: 'COMPRA', data: '2026-08-10', nome: 'MAGALU',
+    valor: 100, status: 'POSTED', billId: 'b1',
+    parcelaNum: 1, parcelaTotal: 12, valorTotal: 1200,
+    dataCompra: '2026-08-01', fingerprint: 'fp-' + seq,
+  }, o);
+}
+const cartoesP = [{ accountId: 'acc-1', nome: 'Black', ultimos: '4417' }];
+const projP = (txs, aj, dic, base) =>
+  ctx.projetarParcelas(txs, aj || {}, dic || [], cartoesP, base || '2026-08', 12);
+
+// Caso central: uma parcela conhecida, o resto projetado.
+{
+  const r = projP([txP({ parcelaNum: 3, parcelaTotal: 12, mesRef: '2026-08' })]);
+  eq('uma compra em curso', r.compras.length, 1);
+  eq('restam 10 parcelas (3..12, a partir do mês-base)', r.compras[0].restantes, 10);
+  eq('9 delas são projetadas', r.compras[0].projetadas, 9);
+  eq('próxima é a 3ª', r.compras[0].proximaNum, 3);
+  eq('termina 9 meses depois de agosto/26', r.compras[0].mesFinal, '2027-05');
+  eq('falta = 10 × 100', r.compras[0].falta, 1000);
+  eq('mês-base tem 1 parcela', r.totalMesBase, 100);
+}
+
+// O RISCO do módulo: banco que lança todas as parcelas de uma vez.
+{
+  const todas = [];
+  let mes = '2026-08';
+  for (let n = 1; n <= 12; n++) { todas.push(txP({ parcelaNum: n, mesRef: mes })); mes = ctx.mesProximo(mes); }
+  const r = projP(todas);
+  eq('nada é projetado quando o banco já lançou tudo', r.compras[0].projetadas, 0);
+  eq('  restam as 12 reais', r.compras[0].restantes, 12);
+  eq('  falta = 12 × 100, não 24 × 100', r.compras[0].falta, 1200);
+  const somaJanela = r.porMes.reduce((a, m) => a + m.total, 0);
+  eq('  soma da janela não conta dobrado', somaJanela, 1200);
+}
+
+// Dedup parcial: banco lançou 1..6, projetamos só 7..12.
+{
+  const algumas = [];
+  let mes = '2026-08';
+  for (let n = 1; n <= 6; n++) { algumas.push(txP({ parcelaNum: n, mesRef: mes })); mes = ctx.mesProximo(mes); }
+  const r = projP(algumas);
+  eq('projeta só o que falta', r.compras[0].projetadas, 6);
+  eq('  total continua 12 parcelas', r.compras[0].restantes, 12);
+  eq('  última é jul/27', r.compras[0].mesFinal, '2027-07');
+}
+
+// Centavos: R$ 100 em 3x = 33,34 + 33,33 + 33,33 tem que agrupar junto.
+{
+  const r = projP([
+    txP({ nome: 'LOJA X', parcelaNum: 1, parcelaTotal: 3, valor: 33.34, valorTotal: 100, mesRef: '2026-08' }),
+    txP({ nome: 'LOJA X', parcelaNum: 2, parcelaTotal: 3, valor: 33.33, valorTotal: 100, mesRef: '2026-09' }),
+  ]);
+  eq('centavo de arredondamento não quebra o agrupamento', r.compras.length, 1);
+  eq('  projeta a 3ª', r.compras[0].projetadas, 1);
+}
+
+// Ignorada não compromete nada.
+{
+  const t = txP({ parcelaNum: 3, mesRef: '2026-08' });
+  const r = projP([t], { ['TX:' + t.id]: { tipo: 'TX', refId: t.id, ignorada: true } });
+  eq('compra ignorada some da projeção', r.compras.length, 0);
+  eq('  e não compromete o mês', r.totalMesBase, 0);
+}
+
+// Só compras parceladas entram.
+{
+  const r = projP([
+    txP({ parcelaNum: 0, parcelaTotal: 0 }),                      // avulsa
+    txP({ natureza: 'PAGAMENTO', valor: -500, parcelaTotal: 0 }),  // pagamento da fatura
+    txP({ natureza: 'ESTORNO', valor: -80, parcelaTotal: 0 }),     // estorno
+  ]);
+  eq('avulsa, pagamento e estorno ficam de fora', r.compras.length, 0);
+}
+{
+  const r = projP([txP({ parcelaNum: 13, parcelaTotal: 12 })]);
+  eq('parcela maior que o total é descartada como inconsistente', r.compras.length, 0);
+}
+
+// Virada de ano na projeção.
+{
+  const r = projP([txP({ parcelaNum: 1, parcelaTotal: 4, mesRef: '2026-11' })], {}, [], '2026-11');
+  eq('nov/26 + 3 parcelas = fev/27', r.compras[0].mesFinal, '2027-02');
+  eq('  meses da janela seguem em ordem',
+     r.porMes.slice(0, 4).map(m => m.mesRef), ['2026-11', '2026-12', '2027-01', '2027-02']);
+}
+
+// "Termina neste mês" — o alerta do backlog.
+{
+  const r = projP([txP({ parcelaNum: 12, parcelaTotal: 12, mesRef: '2026-08' })]);
+  eq('última parcela cai no mês-base', r.terminando.length, 1);
+  eq('  nada projetado depois dela', r.compras[0].projetadas, 0);
+}
+{
+  const r = projP([txP({ parcelaNum: 1, parcelaTotal: 12, mesRef: '2026-08' })]);
+  eq('compra recém-começada não aparece como terminando', r.terminando.length, 0);
+}
+
+// Parcelas já quitadas antes do mês-base não aparecem.
+{
+  const r = projP([txP({ parcelaNum: 12, parcelaTotal: 12, mesRef: '2026-05' })], {}, [], '2026-08');
+  eq('compra já quitada some da lista', r.compras.length, 0);
+}
+
+// O dono vem do ajuste, senão do dicionário.
+{
+  const t = txP({ parcelaNum: 2, nome: 'IFOOD DELIVERY', mesRef: '2026-08' });
+  const semAjuste = projP([t], {}, [{ key: 'IFOOD', dono: 'Dividido', parcelas: 'VARIÁVEL', obs: '' }]);
+  eq('dono herdado do dicionário', semAjuste.compras[0].dono, 'Dividido');
+  const comAjuste = projP([t], { ['TX:' + t.id]: { tipo: 'TX', refId: t.id, dono: 'Luanna' } },
+                         [{ key: 'IFOOD', dono: 'Dividido', parcelas: 'VARIÁVEL', obs: '' }]);
+  eq('ajuste do usuário vence o dicionário', comAjuste.compras[0].dono, 'Luanna');
+}
+
+// Compras diferentes não se misturam.
+{
+  const r = projP([
+    txP({ nome: 'MAGALU', parcelaNum: 1, parcelaTotal: 6, valor: 50, valorTotal: 300, mesRef: '2026-08' }),
+    txP({ nome: 'AMERICANAS', parcelaNum: 1, parcelaTotal: 6, valor: 50, valorTotal: 300, mesRef: '2026-08' }),
+  ]);
+  eq('comerciantes diferentes = compras diferentes', r.compras.length, 2);
+  const r2 = projP([
+    txP({ nome: 'MAGALU', parcelaNum: 1, parcelaTotal: 6, valor: 50, valorTotal: 300, mesRef: '2026-08' }),
+    txP({ nome: 'MAGALU', parcelaNum: 1, parcelaTotal: 6, valor: 90, valorTotal: 540, mesRef: '2026-08' }),
+  ]);
+  eq('mesmo comerciante, valores diferentes = compras diferentes', r2.compras.length, 2);
+  const r3 = projP([
+    txP({ nome: 'MAGALU', accountId: 'acc-1', parcelaNum: 1, parcelaTotal: 6, valor: 50, valorTotal: 300 }),
+    txP({ nome: 'MAGALU', accountId: 'acc-2', parcelaNum: 1, parcelaTotal: 6, valor: 50, valorTotal: 300 }),
+  ]);
+  eq('cartões diferentes = compras diferentes', r3.compras.length, 2);
+}
+
+// mesRefOverride do usuário move a parcela de mês.
+{
+  const t = txP({ parcelaNum: 1, parcelaTotal: 3, mesRef: '2026-08' });
+  const r = projP([t], { ['TX:' + t.id]: { tipo: 'TX', refId: t.id, mesRefOverride: '2026-09' } },
+                 [], '2026-08');
+  eq('override move a âncora, e a projeção segue dela', r.compras[0].mesFinal, '2026-11');
+  eq('  mês-base fica sem essa parcela', r.totalMesBase, 0);
+}
+
+// porMes: a soma por mês bate com o detalhe.
+{
+  const r = projP([
+    txP({ nome: 'A', parcelaNum: 1, parcelaTotal: 3, valor: 10, valorTotal: 30, mesRef: '2026-08' }),
+    txP({ nome: 'B', parcelaNum: 1, parcelaTotal: 2, valor: 25, valorTotal: 50, mesRef: '2026-08' }),
+  ]);
+  eq('agosto soma as duas primeiras parcelas', r.porMes[0].total, 35);
+  eq('setembro também', r.porMes[1].total, 35);
+  eq('outubro só tem a de 3x', r.porMes[2].total, 10);
+  eq('novembro em diante, nada', r.porMes[3].total, 0);
+  ok('itens do mês somam o total do mês',
+     r.porMes.every(m => Math.abs(m.itens.reduce((a, i) => a + i.valor, 0) - m.total) < 0.001));
+  eq('falta total = 30 + 50', r.totalFalta, 80);
+}
 
 console.log('\n' + '='.repeat(52));
 console.log('RESULTADO: ' + passes + ' passaram, ' + falhas + ' falharam');

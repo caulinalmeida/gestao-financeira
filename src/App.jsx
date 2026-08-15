@@ -64,7 +64,9 @@ function getStoredToken(){
     const t=sessionStorage.getItem("gf_token");
     const exp=sessionStorage.getItem("gf_token_exp");
     if(t&&exp&&Date.now()<parseInt(exp)) return t;
-  }catch(e){}
+  }catch{
+    // sessionStorage bloqueado (aba anônima, cookies de terceiros): sem token.
+  }
   return null;
 }
 
@@ -72,7 +74,9 @@ function storeToken(token){
   try{
     sessionStorage.setItem("gf_token",token);
     sessionStorage.setItem("gf_token_exp",String(Date.now()+3500*1000));
-  }catch(e){}
+  }catch{
+    // Sem storage, o login vale só enquanto a página estiver aberta.
+  }
 }
 
 function loadGsiScript(){
@@ -279,6 +283,124 @@ function mergeFatura(transacoes,ajustes,dict,cartoes,opts){
 function totalFatura(linhas){
   return linhas.filter(t=>t.natureza!=="PAGAMENTO"&&!t.ignorada)
                .reduce((a,t)=>a+(t.valor||0),0);
+}
+
+/**
+ * Identidade de uma compra parcelada, para juntar as parcelas dela.
+ *
+ * O valor total é arredondado para reais inteiros DE PROPÓSITO: R$ 100 em 3x
+ * vira 33,34 + 33,33 + 33,33, e um centavo de diferença não pode quebrar o
+ * agrupamento. Duas compras iguais no mesmo comerciante, mesmo número de
+ * parcelas e mesmo valor são indistinguíveis — e tratá-las como uma só seria
+ * errado, então o número da parcela é que decide (ver projetarParcelas).
+ */
+function chaveCompra(t){
+  const total=t.valorTotal||(t.valor*t.parcelaTotal);
+  return `${t.accountId}|${normalize(t.nome)}|${t.parcelaTotal}|${Math.round(total)}`;
+}
+
+/**
+ * Projeta as parcelas que ainda vão cair, derivando tudo de OF_TRANSACOES.
+ *
+ * Não guarda nada: a projeção só preenche os buracos. Alguns bancos lançam
+ * todas as parcelas de uma vez — nesse caso as reais já estão na lista e nada
+ * é projetado por cima, senão o comprometido contaria dobrado. É o único
+ * jeito seguro, porque a janela de sync (−120/+90 dias) materializa só parte
+ * das parcelas futuras, e qual parte varia por banco.
+ *
+ * Devolve, para o mês-base em diante:
+ *   compras — uma linha por compra ainda em curso
+ *   porMes  — quanto cada mês já tem comprometido
+ *   terminando — as que quitam no próprio mês-base
+ */
+function projetarParcelas(transacoes,ajustes,dict,cartoes,mesBase,horizonte){
+  const meses=horizonte||12;
+  const porFingerprint={};
+  Object.values(ajustes).forEach(a=>{if(a.tipo==="TX"&&a.fingerprint)porFingerprint[a.fingerprint]=a;});
+
+  // 1. Agrupa as parcelas conhecidas por compra.
+  const compras=new Map();
+  transacoes.forEach(t=>{
+    if(t.natureza!=="COMPRA") return;
+    if(!(t.parcelaTotal>1)||!(t.parcelaNum>0)) return;
+    if(t.parcelaNum>t.parcelaTotal) return;               // dado inconsistente
+    const ov=ajustes[chaveAjuste("TX",t.id)]||porFingerprint[t.fingerprint];
+    if(ov?.ignorada) return;                              // ignorada não compromete nada
+    const mes=ov?.mesRefOverride||t.mesRef;
+    if(!mes) return;
+
+    const k=chaveCompra(t);
+    let c=compras.get(k);
+    if(!c){
+      const hit=ov?.dono?null:matchDict(t.nome,dict);
+      c={chave:k,nome:t.nome,accountId:t.accountId,
+        cartao:nomeCartao(t.accountId,cartoes,ajustes),
+        dono:ov?.dono??hit?.dono??"",
+        parcelaTotal:t.parcelaTotal,valorTotal:t.valorTotal||0,
+        conhecidas:new Map()};
+      compras.set(k,c);
+    }
+    // Mesmo número de parcela vindo duas vezes: a última lida vence.
+    c.conhecidas.set(t.parcelaNum,{mesRef:mes,valor:t.valor});
+    if(!c.dono&&ov?.dono) c.dono=ov.dono;
+  });
+
+  // 2. Completa cada compra com as parcelas que faltam.
+  const itens=[];
+  const resumo=[];
+  compras.forEach(c=>{
+    const nums=[...c.conhecidas.keys()].sort((a,b)=>a-b);
+    const ultimoNum=nums[nums.length-1];
+    const ancora=c.conhecidas.get(ultimoNum);
+    const proprias=[];
+
+    nums.forEach(n=>{
+      const p=c.conhecidas.get(n);
+      proprias.push({chave:c.chave,nome:c.nome,cartao:c.cartao,dono:c.dono,
+        num:n,total:c.parcelaTotal,mesRef:p.mesRef,valor:p.valor,projetada:false});
+    });
+    // A partir da última conhecida, uma parcela por mês, com o mesmo valor.
+    let mes=ancora.mesRef;
+    for(let n=ultimoNum+1;n<=c.parcelaTotal;n++){
+      mes=mesProximo(mes);
+      proprias.push({chave:c.chave,nome:c.nome,cartao:c.cartao,dono:c.dono,
+        num:n,total:c.parcelaTotal,mesRef:mes,valor:ancora.valor,projetada:true});
+    }
+    itens.push(...proprias);
+
+    // "Em curso" é relativo ao mês-base: o que já passou não interessa aqui.
+    const restantes=proprias.filter(p=>p.mesRef>=mesBase).sort((a,b)=>a.num-b.num);
+    if(!restantes.length) return;
+    const mesFinal=proprias.reduce((a,p)=>p.mesRef>a?p.mesRef:a,proprias[0].mesRef);
+    resumo.push({
+      chave:c.chave,nome:c.nome,cartao:c.cartao,dono:c.dono,
+      parcelaTotal:c.parcelaTotal,valorParcela:ancora.valor,
+      proximaNum:restantes[0].num,restantes:restantes.length,
+      falta:restantes.reduce((a,p)=>a+p.valor,0),
+      mesFinal,terminaEsteMes:mesFinal===mesBase,
+      projetadas:restantes.filter(p=>p.projetada).length,
+    });
+  });
+
+  // 3. Quanto cada mês da janela já tem comprometido.
+  const janela=[];
+  let m=mesBase;
+  for(let i=0;i<meses;i++){ janela.push(m); m=mesProximo(m); }
+  const porMes=janela.map(mesJ=>{
+    const doMes=itens.filter(x=>x.mesRef===mesJ).sort((a,b)=>b.valor-a.valor);
+    return{mesRef:mesJ,qtd:doMes.length,itens:doMes,
+      total:doMes.reduce((a,x)=>a+x.valor,0),
+      projetado:doMes.filter(x=>x.projetada).reduce((a,x)=>a+x.valor,0)};
+  });
+
+  resumo.sort((a,b)=>a.mesFinal===b.mesFinal?b.falta-a.falta:a.mesFinal.localeCompare(b.mesFinal));
+  return{
+    compras:resumo,
+    porMes,
+    terminando:resumo.filter(c=>c.terminaEsteMes),
+    totalFalta:resumo.reduce((a,c)=>a+c.falta,0),
+    totalMesBase:porMes[0]?porMes[0].total:0,
+  };
 }
 
 // ── Styles ────────────────────────────────────────────────────────────────────
@@ -571,6 +693,127 @@ function ConfirmModal({titulo,texto,onConfirm,onClose}){
   );
 }
 
+/**
+ * Aba Parcelas: o que já está comprometido nos próximos meses.
+ *
+ * A pergunta que ela responde é "quanto do meu mês que vem já está gasto", e a
+ * segunda é "o que vai sair da conta em breve" — por isso o alerta de quitação
+ * fica no topo, antes da lista.
+ */
+function PainelParcelas({proj,mesRef,isMobile,onVerMes}){
+  const{compras,porMes,terminando,totalFalta,totalMesBase}=proj;
+  const pico=Math.max(...porMes.map(m=>m.total),1);
+  const mesesComAlgo=porMes.filter(m=>m.total>0);
+  const liberaNoMes=terminando.reduce((a,c)=>a+c.valorParcela,0);
+
+  if(!compras.length) return(
+    <div style={card}><EmptyState icon="📅">
+      Nenhuma compra parcelada em andamento a partir de {mesLabel(mesRef)}.
+    </EmptyState></div>
+  );
+
+  return(
+    <div>
+      <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"repeat(3,1fr)",gap:10,marginBottom:14}}>
+        <MetricCard label={`Parcelas em ${mesLabelCurto(mesRef)}`} icon="📅"
+          value={fmtBRL(totalMesBase)} accent="blue"
+          sub={`${porMes[0]?.qtd||0} parcela${(porMes[0]?.qtd||0)===1?"":"s"}`}/>
+        <MetricCard label="Falta pagar no total" icon="⏳"
+          value={fmtBRL(totalFalta)} accent="amber"
+          sub={`${compras.length} compra${compras.length===1?"":"s"} em curso`}/>
+        <MetricCard label="Quita neste mês" icon="🎉"
+          value={fmtBRL(liberaNoMes)} accent={liberaNoMes>0?"green":"none"}
+          sub={liberaNoMes>0?`libera por mês a partir de ${mesLabelCurto(mesProximo(mesRef))}`:"nada termina agora"}/>
+      </div>
+
+      {terminando.length>0&&(
+        <div style={{...card,background:C.green50,border:`1px solid ${C.green100}`}}>
+          <div style={{fontSize:13,fontWeight:600,color:C.green600,marginBottom:8}}>
+            🎉 Termina em {mesLabel(mesRef)}
+          </div>
+          {terminando.map(c=>(
+            <div key={c.chave} style={{display:"flex",justifyContent:"space-between",gap:10,
+              fontSize:12,color:C.green600,padding:"4px 0",flexWrap:"wrap"}}>
+              <span>{c.nome} <span style={{opacity:0.6}}>· última de {c.parcelaTotal}</span></span>
+              <strong style={{fontVariantNumeric:"tabular-nums"}}>{fmtBRL(c.valorParcela)}/mês</strong>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div style={card}>
+        <SectionLabel>Comprometido por mês</SectionLabel>
+        <p style={{fontSize:11,color:C.textMuted,margin:"0 0 12px",lineHeight:1.6}}>
+          Só compras parceladas. Barra listrada é projeção — a parcela ainda não
+          apareceu na fatura, mas vai. Clique num mês para ver o detalhe.
+        </p>
+        {mesesComAlgo.length===0
+          ?<EmptyState icon="📅">Nada comprometido nos próximos meses.</EmptyState>
+          :mesesComAlgo.map(m=>{
+            const pctReal=((m.total-m.projetado)/pico)*100;
+            const pctProj=(m.projetado/pico)*100;
+            return(
+              <button key={m.mesRef} className="gf-btn" onClick={()=>onVerMes(m)}
+                style={{display:"block",width:"100%",textAlign:"left",background:"transparent",
+                  border:"none",borderRadius:8,padding:"6px 4px",cursor:"pointer"}}>
+                <div style={{display:"flex",justifyContent:"space-between",fontSize:12,marginBottom:4}}>
+                  <span style={{color:m.mesRef===mesRef?C.blue600:C.textDim,
+                    fontWeight:m.mesRef===mesRef?700:500}}>
+                    {mesLabelCurto(m.mesRef)}
+                    <span style={{color:C.textMuted,fontWeight:400,marginLeft:6}}>{m.qtd}×</span>
+                  </span>
+                  <strong style={{color:C.text,fontVariantNumeric:"tabular-nums"}}>{fmtBRL(m.total)}</strong>
+                </div>
+                <div style={{display:"flex",height:8,borderRadius:4,overflow:"hidden",background:C.surfaceAlt}}>
+                  <div style={{width:`${pctReal}%`,background:C.blue600}}/>
+                  <div style={{width:`${pctProj}%`,backgroundColor:C.blue100,
+                    backgroundImage:`repeating-linear-gradient(45deg,transparent,transparent 3px,${C.blue600}55 3px,${C.blue600}55 6px)`}}/>
+                </div>
+              </button>
+            );
+          })}
+      </div>
+
+      <div style={card}>
+        <SectionLabel>Compras em andamento</SectionLabel>
+        <div style={{overflowX:"auto"}}>
+          <table style={{width:"100%",fontSize:12,borderCollapse:"collapse",minWidth:560}}>
+            <thead><tr style={{background:C.surfaceAlt}}>
+              {["Compra","Cartão","Dono","Próxima","Valor/mês","Restam","Falta","Termina"].map(h=>
+                <th key={h} style={th}>{h}</th>)}
+            </tr></thead>
+            <tbody>{compras.map(c=>(
+              <tr key={c.chave}>
+                <td style={{...td,maxWidth:190}}>
+                  <div style={{whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}
+                    title={c.nome}>{c.nome}</div>
+                </td>
+                <td style={{...td,color:C.textDim,whiteSpace:"nowrap"}}>{c.cartao}</td>
+                <td style={td}>
+                  {c.dono
+                    ?<span style={{color:c.dono==="Luanna"?C.purple600:c.dono==="Caulin"?C.teal600:C.textDim}}>{c.dono}</span>
+                    :<span style={{color:C.amber600}}>—</span>}
+                </td>
+                <td style={{...td,color:C.textDim,fontVariantNumeric:"tabular-nums"}}>
+                  {String(c.proximaNum).padStart(2,"0")}/{String(c.parcelaTotal).padStart(2,"0")}
+                </td>
+                <td style={{...td,fontVariantNumeric:"tabular-nums"}}>{fmtBRL(c.valorParcela)}</td>
+                <td style={{...td,color:C.textDim}}>{c.restantes}×</td>
+                <td style={{...td,fontWeight:600,fontVariantNumeric:"tabular-nums"}}>{fmtBRL(c.falta)}</td>
+                <td style={{...td,whiteSpace:"nowrap"}}>
+                  {c.terminaEsteMes
+                    ?<Badge color="ok">{mesLabelCurto(c.mesFinal)}</Badge>
+                    :<span style={{color:C.textDim}}>{mesLabelCurto(c.mesFinal)}</span>}
+                </td>
+              </tr>
+            ))}</tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function CopyMesModal({dadosMes,mesRef,onClose,onImport}){
   // mesAnterior atravessa a virada de ano — antes, JANEIRO nunca achava DEZEMBRO.
   const prevNome=mesAnterior(mesRef);
@@ -660,6 +903,7 @@ export default function App(){
   const [mostrarPagamentos,setMostrarPagamentos]=useState(false);
   const [pedindoSync,setPedindoSync]=useState(false);
   const [showCartoes,setShowCartoes]=useState(false);
+  const [parcelaMes,setParcelaMes]=useState(null);
   const [modal,setModal]=useState(null);
   const [pago,setPago]=useState({});
   const [authStatus,setAuthStatus]=useState(()=>getStoredToken()?"ok":"idle");
@@ -667,11 +911,6 @@ export default function App(){
   const syncTimer=useRef(null);
   const ajusteTimer=useRef(null);
   const isMobile=useMediaQuery("(max-width: 720px)");
-
-  // ── Auto-load se já tem token ─────────────────────────────────────────────
-  useEffect(()=>{
-    if(authStatus==="ok") loadAllData();
-  },[]);
 
   // ── State helpers ─────────────────────────────────────────────────────────
   const getMes=useCallback(m=>dadosMes[m]||{fatura:[],manual:[],contas:[],investimentos:[]},[dadosMes]);
@@ -713,7 +952,8 @@ export default function App(){
         setSyncStatus("salvo ✓");
         setTimeout(()=>setSyncStatus(""),2500);
       }catch(e){
-        setSyncStatus("erro ao salvar");
+        console.error("Falha ao gravar na planilha.",e);
+        setSyncStatus("⚠️ NÃO salvo");
       }
     },1200);
   },[]);
@@ -866,6 +1106,16 @@ export default function App(){
     }
   }
 
+  // Sessão ainda válida (token no sessionStorage, ~58 min): carrega direto, sem
+  // passar pela tela de login. Fica depois de loadAllData de propósito — antes,
+  // o lint do React acusava uso de variável antes da declaração.
+  //
+  // O disable é consciente: a regra existe para evitar render em cascata, mas
+  // aqui é o carregamento inicial acontecendo uma vez só, na montagem. O
+  // setSyncStatus("carregando...") de dentro de loadAllData é o alvo dela.
+  // eslint-disable-next-line react-hooks/set-state-in-effect
+  useEffect(()=>{ if(getStoredToken()) loadAllData(); },[]);
+
   // ── Login ─────────────────────────────────────────────────────────────────
   const handleLogin=async()=>{
     setAuthStatus("loading");
@@ -935,6 +1185,9 @@ export default function App(){
   const totalEmAberto=totalFatura(
     mergeFatura(ofTransacoes,ajustes,dict,ofCartoes,
       {mesRef,status:"PENDING",mostrarIgnoradas:false,mostrarPagamentos:false}));
+
+  // Parcelas futuras: derivadas, não armazenadas. Ver projetarParcelas.
+  const proj=projetarParcelas(ofTransacoes,ajustes,dict,ofCartoes,mesRef,12);
 
   const updF=(id,f,v)=>withSync(mesRef,"fatura",c=>({fatura:c.fatura.map(r=>r.id===id?{...r,[f]:v}:r)}));
   const rmF=id=>withSync(mesRef,"fatura",c=>({fatura:c.fatura.filter(r=>r.id!==id)}));
@@ -1025,7 +1278,8 @@ export default function App(){
   const mesesComDados=Object.keys(dadosMes);
   // Anos que têm dados + o ano do mês selecionado, para o seletor sempre poder voltar.
   const anosComDados=[...new Set([...mesesComDados.map(k=>mesPartes(k).ano),mesPartes(mesRef).ano])].filter(a=>!isNaN(a)).sort((a,b)=>b-a);
-  const TABS=[{l:"Fatura",i:"💳"},{l:"Contas",i:"🏠"},{l:"Investimentos",i:"📈"},{l:"Checklist",i:"✅"}];
+  const TABS=[{l:"Fatura",i:"💳"},{l:"Parcelas",i:"📅"},{l:"Contas",i:"🏠"},
+    {l:"Investimentos",i:"📈"},{l:"Checklist",i:"✅"}];
 
   // ── Tela de login ─────────────────────────────────────────────────────────
   if(authStatus!=="ok"){
@@ -1114,6 +1368,41 @@ export default function App(){
       )}
 
       {confirmar&&<ConfirmModal {...confirmar} onClose={()=>setConfirmar(null)}/>}
+
+      {parcelaMes&&(
+        <Modal onClose={()=>setParcelaMes(null)} wide>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+            <h3 style={{fontSize:15,fontWeight:600,margin:0,color:C.text}}>
+              Parcelas de {mesLabel(parcelaMes.mesRef)}
+            </h3>
+            <button onClick={()=>setParcelaMes(null)} style={{background:"none",border:"none",cursor:"pointer",color:C.textMuted,fontSize:20}}>✕</button>
+          </div>
+          <p style={{fontSize:12,color:C.textMuted,margin:"0 0 14px"}}>
+            {parcelaMes.qtd} parcela{parcelaMes.qtd===1?"":"s"} · total {fmtBRL(parcelaMes.total)}
+            {parcelaMes.projetado>0&&<> · {fmtBRL(parcelaMes.projetado)} ainda projetado</>}
+          </p>
+          <div style={{overflowX:"auto"}}>
+            <table style={{width:"100%",fontSize:12,borderCollapse:"collapse",minWidth:420}}>
+              <thead><tr style={{background:C.surfaceAlt}}>
+                {["Compra","Cartão","Parcela","Valor",""].map(h=><th key={h} style={th}>{h}</th>)}
+              </tr></thead>
+              <tbody>{parcelaMes.itens.map(p=>(
+                <tr key={p.chave+p.num}>
+                  <td style={td}>{p.nome}</td>
+                  <td style={{...td,color:C.textDim,whiteSpace:"nowrap"}}>{p.cartao}</td>
+                  <td style={{...td,color:C.textDim,fontVariantNumeric:"tabular-nums"}}>
+                    {String(p.num).padStart(2,"0")}/{String(p.total).padStart(2,"0")}
+                  </td>
+                  <td style={{...td,fontVariantNumeric:"tabular-nums"}}>{fmtBRL(p.valor)}</td>
+                  <td style={td}>{p.projetada
+                    ?<Badge color="info">projetada</Badge>
+                    :<Badge color="ok">na fatura</Badge>}</td>
+                </tr>
+              ))}</tbody>
+            </table>
+          </div>
+        </Modal>
+      )}
 
       {showCartoes&&(
         <Modal onClose={()=>setShowCartoes(false)}>
@@ -1252,8 +1541,19 @@ export default function App(){
           </div>
         )}
 
-        {/* CONTAS */}
+        {/* PARCELAS */}
         {tab===1&&(
+          temOF
+            ?<PainelParcelas proj={proj} mesRef={mesRef} isMobile={isMobile}
+               onVerMes={setParcelaMes}/>
+            :<div style={card}><EmptyState icon="📅">
+                As parcelas vêm do Open Finance, que ainda não foi configurado.
+                Veja docs/SETUP-PLUGGY.md.
+              </EmptyState></div>
+        )}
+
+        {/* CONTAS */}
+        {tab===2&&(
           <div style={card}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
               <div><span style={{fontSize:14,fontWeight:600,color:C.text}}>Contas e renda</span><span style={{fontSize:12,color:C.textMuted,marginLeft:8}}>{mesLabel(mesRef)}</span></div>
@@ -1283,7 +1583,7 @@ export default function App(){
         )}
 
         {/* INVESTIMENTOS */}
-        {tab===2&&(
+        {tab===3&&(
           <div style={card}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
               <div><span style={{fontSize:14,fontWeight:600,color:C.text}}>Investimentos</span><span style={{fontSize:12,color:C.textMuted,marginLeft:8}}>{mesLabel(mesRef)}</span></div>
@@ -1312,7 +1612,7 @@ export default function App(){
         )}
 
         {/* CHECKLIST */}
-        {tab===3&&(()=>{
+        {tab===4&&(()=>{
           const{rendaCaulin,rendaLuanna,despCaulin,despLuanna,saldoCaulin,contasList,invList,totalFaturaCartoes}=calcChecklist();
           const rendaTotal=rendaCaulin+rendaLuanna;
 
