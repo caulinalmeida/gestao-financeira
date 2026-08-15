@@ -10,7 +10,9 @@
     "build": "vite build",
     "preview": "vite preview",
     "lint": "eslint src/",
-    "qa": "node scripts/qa-apps-script.cjs",
+    "qa": "node scripts/qa-apps-script.cjs && node scripts/qa-app.cjs",
+    "qa:sync": "node scripts/qa-apps-script.cjs",
+    "qa:app": "node scripts/qa-app.cjs",
     "predeploy": "npm run build",
     "deploy": "gh-pages -d dist"
   },

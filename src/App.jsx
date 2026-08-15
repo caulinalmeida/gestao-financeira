@@ -35,11 +35,7 @@ const C = {
 function fmtBRL(v){return"R$ "+Number(v||0).toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2});}
 function parseBRL(s){if(!s&&s!==0)return 0;const str=String(s).replace(/R\$\s*/g,"").trim();if(str.includes(","))return parseFloat(str.replace(/\./g,"").replace(",","."))||0;return parseFloat(str)||0;}
 function normalize(s){return(s||"").toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^A-Z0-9\s]/g," ").replace(/\s+/g," ").trim();}
-function extractParcela(s){const m=String(s).match(/(\d{2}\/\d{2})\s*$/);return m?m[1]:"";}
-function stripParcela(s){return String(s).replace(/\s*\d{2}\/\d{2}\s*$/,"").trim();}
 function matchDict(t,dict){const n=normalize(t);return dict.find(d=>n.includes(normalize(d.key)));}
-function parseCSVLine(l){const sep=l.includes(";")?";":",";return l.split(sep).map(c=>c.replace(/^["']|["']$/g,"").trim());}
-function sumArr(arr){return(arr||[]).reduce((a,b)=>a+(b.valor||0),0);}
 function uid(){return Math.random().toString(36).slice(2,9);}
 
 // ── Modelo de mês: chave "ANO-MÊS" (ex.: "2026-08") ───────────────────────────
@@ -131,6 +127,17 @@ async function sheetsClear(range){
   });
 }
 
+// Atualiza um intervalo pontual, sem apagar o resto da aba. Usado só para a
+// célula `pedido_sync` em OF_STATUS — a única coisa que o app escreve numa
+// aba que pertence ao Apps Script.
+async function sheetsUpdate(range,values){
+  const tok=await getToken();
+  await fetch(`${API_BASE}/values/${encodeURIComponent(range)}?valueInputOption=RAW`,{
+    method:"PUT",headers:{Authorization:`Bearer ${tok}`,"Content-Type":"application/json"},
+    body:JSON.stringify({range,majorDimension:"ROWS",values}),
+  });
+}
+
 // ── Row converters ────────────────────────────────────────────────────────────
 function contaToRow(mes,r){return[mes,r.data||"",r.transacao,String(parseBRL(r.valor)),r.dono,r.tipo,r.parcelas||"",r.obs||""];}
 function rowToConta(row){return{id:uid(),transacao:row[2]||"",valor:String(parseBRL(row[3])),dono:row[4]||"Caulin",tipo:row[5]||"DESPESA",parcelas:row[6]||"",obs:row[7]||""};}
@@ -139,6 +146,140 @@ function faturaToRow(mes,r,origem){return[mes,r.data||"",r.nome,r.parcela||"",St
 function rowToFatura(row){return{id:uid(),data:row[1]||"",nome:row[2]||"",parcela:row[3]||"",valor:parseBRL(row[4]),dono:row[5]||"",tipo:row[6]||"DESPESA",parcelas:row[7]||"VARIÁVEL",obs:row[8]||"",cartao:row[9]||"",isNew:false};}
 function dictToRow(d){return[d.key,d.dono,d.parcelas,d.obs||""];}
 function rowToDict(row){return{key:row[0]||"",dono:row[1]||"Caulin",parcelas:row[2]||"VARIÁVEL",obs:row[3]||""};}
+
+// ── Open Finance ──────────────────────────────────────────────────────────────
+// Abas OF_* são escritas SÓ pelo Apps Script; o app apenas lê. As decisões do
+// usuário (dono, classificação, obs, ignorada) vivem em OF_AJUSTES, escrita SÓ
+// pelo app. Um escritor por aba — é o que evita os dois se atropelarem.
+
+// A API do Sheets devolve valor já formatado, então a data pode vir como
+// "2026-07-03" ou "03/07/2026" dependendo de o Sheets ter interpretado a
+// célula como texto ou data.
+function parseDataFlex(v){
+  const s=String(v==null?"":v).trim();
+  if(!s) return "";
+  let m=s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if(m) return `${m[1]}-${String(m[2]).padStart(2,"0")}-${String(m[3]).padStart(2,"0")}`;
+  m=s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  if(m) return `${m[3]}-${String(m[2]).padStart(2,"0")}-${String(m[1]).padStart(2,"0")}`;
+  return s;
+}
+function dataCurta(iso){const m=String(iso||"").match(/^(\d{4})-(\d{2})-(\d{2})$/);return m?`${m[3]}/${m[2]}`:String(iso||"");}
+
+function rowToOfTx(row){
+  return{
+    id:row[0]||"",accountId:row[1]||"",mesRef:parseMesRef(row[2])||"",origemMes:row[3]||"",
+    natureza:String(row[4]||"COMPRA").toUpperCase(),data:parseDataFlex(row[5]),
+    nome:row[6]||"",valor:parseBRL(row[7]),status:String(row[8]||"").toUpperCase(),
+    billId:row[9]||"",parcelaNum:parseInt(row[10],10)||0,parcelaTotal:parseInt(row[11],10)||0,
+    valorTotal:parseBRL(row[12]),dataCompra:parseDataFlex(row[13]),fingerprint:row[14]||"",
+  };
+}
+function rowToOfCartao(row){
+  return{accountId:row[0]||"",itemId:row[1]||"",nome:row[2]||"",ultimos:String(row[3]||""),
+    limite:parseBRL(row[4]),fechamento:row[5]||"",vencimento:row[6]||""};
+}
+function rowToOfFatura(row){
+  return{accountId:row[0]||"",mesRef:parseMesRef(row[1])||"",vencimento:parseDataFlex(row[2]),
+    fechamento:parseDataFlex(row[3]),totalBanco:parseBRL(row[4])};
+}
+
+// OF_AJUSTES: tipo | ref_id | dono | classificacao | obs | ignorada |
+//             mes_ref_override | apelido | fingerprint
+// O fingerprint é guardado junto para religar o ajuste quando o Pluggy troca o
+// id da transação (ele deleta e recria quando data/descrição/valor mudam).
+const chaveAjuste=(tipo,refId)=>`${tipo}:${refId}`;
+function rowToAjuste(row){
+  return{tipo:String(row[0]||"TX").toUpperCase(),refId:row[1]||"",dono:row[2]||"",
+    classificacao:row[3]||"",obs:row[4]||"",
+    ignorada:String(row[5]||"").toUpperCase()==="TRUE",
+    mesRefOverride:row[6]?(parseMesRef(row[6])||""):"",apelido:row[7]||"",
+    fingerprint:row[8]||""};
+}
+function ajusteToRow(a){
+  return[a.tipo||"TX",a.refId,a.dono||"",a.classificacao||"",a.obs||"",
+    a.ignorada?"TRUE":"FALSE",a.mesRefOverride||"",a.apelido||"",a.fingerprint||""];
+}
+// Ajuste sem nenhuma decisão do usuário não precisa ocupar linha na planilha.
+function ajusteVazio(a){
+  return !a||(!a.dono&&!a.classificacao&&!a.obs&&!a.ignorada&&!a.mesRefOverride&&!a.apelido);
+}
+
+// Nome de exibição do cartão: apelido do usuário vence o nome do banco.
+function nomeCartao(accountId,cartoes,ajustes){
+  const ap=ajustes[chaveAjuste("CARTAO",accountId)];
+  if(ap?.apelido) return ap.apelido;
+  const c=cartoes.find(x=>x.accountId===accountId);
+  if(!c) return "Outros";
+  return c.ultimos?`${c.nome} ·${c.ultimos}`:c.nome;
+}
+
+// PARCELADO vem do próprio Pluggy; o resto cai no dicionário.
+function classificaAuto(tx,hit){
+  if(tx.parcelaTotal>1) return "PARCELADO";
+  return hit?.parcelas||"VARIÁVEL";
+}
+
+/**
+ * Junta o que o Pluggy trouxe com o que o usuário decidiu.
+ *
+ * Pluggy é dono de: data, descrição, valor, parcela, cartão, status.
+ * O usuário é dono de: dono, classificação, obs, ignorada.
+ * Ajuste NUNCA é sobrescrito pelo sync — é o que torna a categorização durável.
+ *
+ * Quando o Pluggy troca o id de uma transação (ele deleta e recria se data,
+ * descrição ou valor mudam), o ajuste é religado pelo fingerprint.
+ */
+function mergeFatura(transacoes,ajustes,dict,cartoes,opts){
+  const{mesRef,status,mostrarIgnoradas,mostrarPagamentos}=opts||{};
+
+  // Índice por fingerprint para religar ajuste órfão.
+  const porFingerprint={};
+  Object.values(ajustes).forEach(a=>{if(a.tipo==="TX"&&a.fingerprint)porFingerprint[a.fingerprint]=a;});
+
+  const linhas=transacoes
+    .filter(t=>{
+      if(mesRef){
+        const ov=ajustes[chaveAjuste("TX",t.id)];
+        const mes=ov?.mesRefOverride||t.mesRef;
+        if(mes!==mesRef) return false;
+      }
+      if(status&&t.status!==status) return false;
+      return true;
+    })
+    .map(t=>{
+      const ov=ajustes[chaveAjuste("TX",t.id)]||porFingerprint[t.fingerprint];
+      const hit=ov?.dono?null:matchDict(t.nome,dict);
+      return{
+        ...t,
+        cartao:nomeCartao(t.accountId,cartoes,ajustes),
+        dono:ov?.dono??hit?.dono??"",
+        parcelas:ov?.classificacao||classificaAuto(t,hit),
+        obs:ov?.obs??hit?.obs??"",
+        ignorada:!!ov?.ignorada,
+        // Só é "novo" se o usuário nunca decidiu E o dicionário não conhece.
+        isNew:!ov?.dono&&!hit,
+        parcela:t.parcelaTotal>1?`${String(t.parcelaNum).padStart(2,"0")}/${String(t.parcelaTotal).padStart(2,"0")}`:"",
+        origem:"OPEN_FINANCE",
+      };
+    })
+    .filter(t=>{
+      if(!mostrarIgnoradas&&t.ignorada) return false;
+      // Pagamento da fatura não é despesa de ninguém: o banco não soma no
+      // total e nós também não. Fica escondido por padrão.
+      if(!mostrarPagamentos&&t.natureza==="PAGAMENTO") return false;
+      return true;
+    });
+
+  linhas.sort((a,b)=>String(b.data).localeCompare(String(a.data)));
+  return linhas;
+}
+
+// Total conforme o banco calcula: sem o pagamento, e sem o que foi ignorado.
+function totalFatura(linhas){
+  return linhas.filter(t=>t.natureza!=="PAGAMENTO"&&!t.ignorada)
+               .reduce((a,t)=>a+(t.valor||0),0);
+}
 
 // ── Styles ────────────────────────────────────────────────────────────────────
 const inp={fontSize:13,padding:"6px 10px",borderRadius:8,border:`1px solid ${C.border}`,background:C.surfaceAlt,color:C.text,width:"100%",boxSizing:"border-box",outline:"none"};
@@ -223,6 +364,195 @@ function Modal({onClose,children,wide}){
       <div style={{...card,maxWidth:wide?680:460,width:"100%",maxHeight:"82vh",overflowY:"auto",margin:0,boxShadow:"0 18px 50px rgba(0,0,0,0.6)"}} onClick={e=>e.stopPropagation()}>
         {children}
       </div>
+    </div>
+  );
+}
+
+function tempoRelativo(iso){
+  const t=new Date(iso).getTime();
+  if(isNaN(t)) return "";
+  const min=Math.round((Date.now()-t)/60000);
+  if(min<1) return "agora";
+  if(min<60) return `há ${min} min`;
+  const h=Math.round(min/60);
+  if(h<24) return `há ${h}h`;
+  return `há ${Math.round(h/24)}d`;
+}
+
+/** Faixa de status do Open Finance: frescor do dado e conciliação com o banco. */
+function BarraOpenFinance({temOF,ultimoSync,erroSync,conciliacao,pedindoSync,onAtualizar,onCartoes,isMobile}){
+  if(!temOF) return(
+    <div style={{...card,borderColor:C.amber100,background:C.amberSoft}}>
+      <div style={{fontSize:13,color:C.amber600,fontWeight:600,marginBottom:4}}>Open Finance não configurado</div>
+      <div style={{fontSize:12,color:C.textDim,lineHeight:1.6}}>
+        Instale o Apps Script e rode <code>sincronizarAgora()</code>. Passo a passo em <code>docs/SETUP-PLUGGY.md</code>.
+      </div>
+    </div>
+  );
+  const divergentes=conciliacao.filter(c=>Math.abs(c.dif)>=0.01);
+  return(
+    <div style={{...card,padding:"0.85rem 1rem"}}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,flexWrap:"wrap"}}>
+        <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+          <span style={{fontSize:11,color:C.textMuted}}>
+            {ultimoSync?`Atualizado ${tempoRelativo(ultimoSync)}`:"Nunca sincronizado"}
+          </span>
+          {conciliacao.length>0&&(divergentes.length===0
+            ?<Badge>confere com o banco</Badge>
+            :<Badge color="new">{divergentes.length} cartão(ões) divergindo</Badge>)}
+        </div>
+        <div style={{display:"flex",gap:6}}>
+          <Btn small onClick={onCartoes}>💳 Cartões</Btn>
+          <Btn small active onClick={onAtualizar} disabled={pedindoSync}>
+            {pedindoSync?"Pedindo…":"🔄 Atualizar"}
+          </Btn>
+        </div>
+      </div>
+
+      {erroSync&&(
+        <div style={{marginTop:10,fontSize:12,color:C.red600,background:C.red50,border:`1px solid ${C.red100}`,padding:"8px 10px",borderRadius:8}}>
+          ⚠️ {erroSync}
+        </div>
+      )}
+
+      {divergentes.length>0&&(
+        <div style={{marginTop:10,fontSize:12,color:C.amber600,background:C.amber50,border:`1px solid ${C.amber100}`,padding:"8px 10px",borderRadius:8,lineHeight:1.7}}>
+          <strong>Total diferente do banco</strong>
+          {divergentes.map(c=>(
+            <div key={c.accountId} style={{color:C.textDim}}>
+              {c.nome}: nós {fmtBRL(c.nosso)} · banco {fmtBRL(c.banco)} ·{" "}
+              <strong style={{color:C.amber600}}>{c.dif>0?"+":""}{fmtBRL(c.dif)}</strong>
+            </div>
+          ))}
+          <div style={{color:C.textMuted,fontSize:11,marginTop:4}}>
+            Normalmente é lançamento que o Pluggy não entregou. Confira na fatura do banco.
+          </div>
+        </div>
+      )}
+
+      {!isMobile&&conciliacao.length>0&&divergentes.length===0&&(
+        <div style={{marginTop:8,fontSize:11,color:C.textMuted}}>
+          {conciliacao.map(c=>`${c.nome}: ${fmtBRL(c.nosso)}`).join("  ·  ")}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Tabela de fatura. Serve tanto para Open Finance quanto para linhas legadas. */
+function TabelaFatura({titulo,subtitulo,linhas,isMobile,filtro,setFiltro,
+  mostrarIgnoradas,setMostrarIgnoradas,mostrarPagamentos,setMostrarPagamentos,
+  onCampo,onIgnorar,onAprender,onLegado,onRemoverLegado}){
+
+  const filtros=["TODOS","PARCELADO","RECORRENTE","VARIÁVEL","NOVO"];
+  const vis=linhas.filter(r=>filtro==="TODOS"?true:filtro==="NOVO"?r.isNew:r.parcelas===filtro);
+  const novos=linhas.filter(r=>r.isNew).length;
+  const semDono=linhas.filter(r=>!r.dono&&!r.ignorada&&r.natureza!=="PAGAMENTO").length;
+  const total=totalFatura(linhas);
+
+  return(
+    <div style={card}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:12,flexWrap:"wrap",gap:8}}>
+        <div>
+          <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+            <span style={{fontSize:14,fontWeight:600,color:C.text}}>{titulo}</span>
+            {novos>0&&<Badge color="new">{novos} para revisar</Badge>}
+          </div>
+          <div style={{fontSize:11,color:C.textMuted,marginTop:3}}>
+            {linhas.length} lançamentos · {subtitulo}
+          </div>
+        </div>
+        <div style={{textAlign:"right"}}>
+          <div style={{fontSize:19,fontWeight:700,color:C.text,fontVariantNumeric:"tabular-nums",letterSpacing:"-0.02em"}}>{fmtBRL(total)}</div>
+          <div style={{fontSize:10,color:C.textMuted}}>total da fatura</div>
+        </div>
+      </div>
+
+      {semDono>0&&(
+        <div style={{fontSize:12,color:C.amber600,background:C.amberSoft,border:`1px solid ${C.amber100}`,padding:"7px 10px",borderRadius:8,marginBottom:10}}>
+          {semDono} lançamento(s) sem dono — <strong>não entram no checklist</strong> até você classificar.
+        </div>
+      )}
+
+      <div style={{display:"flex",gap:5,flexWrap:"wrap",marginBottom:10,alignItems:"center"}}>
+        {filtros.map(f=>(
+          <button key={f} className="gf-btn" onClick={()=>setFiltro(f)}
+            style={{fontSize:11,padding:"5px 10px",borderRadius:20,cursor:"pointer",
+              border:`1px solid ${filtro===f?C.teal100:C.border}`,
+              background:filtro===f?C.teal50:"transparent",
+              color:filtro===f?C.teal600:C.textDim,fontWeight:filtro===f?700:500}}>{f}</button>
+        ))}
+        <span style={{flex:1}}/>
+        <label style={{fontSize:11,color:C.textDim,display:"flex",alignItems:"center",gap:5,cursor:"pointer"}}>
+          <input type="checkbox" checked={mostrarIgnoradas} onChange={e=>setMostrarIgnoradas(e.target.checked)} style={{accentColor:C.teal600}}/>
+          ignoradas
+        </label>
+        <label style={{fontSize:11,color:C.textDim,display:"flex",alignItems:"center",gap:5,cursor:"pointer"}}>
+          <input type="checkbox" checked={mostrarPagamentos} onChange={e=>setMostrarPagamentos(e.target.checked)} style={{accentColor:C.teal600}}/>
+          pagamentos
+        </label>
+      </div>
+
+      <div style={{overflowX:"auto"}}>
+        <table style={{width:"100%",fontSize:12,borderCollapse:"collapse",minWidth:isMobile?620:680}}>
+          <thead><tr style={{background:C.surfaceAlt}}>
+            {["Data","Descrição","Cartão","Valor","Dono","Classificação","Obs",""].map(h=><th key={h} style={th}>{h}</th>)}
+          </tr></thead>
+          <tbody>
+            {vis.map(r=>{
+              const leg=r.origem==="LEGADO";
+              const pag=r.natureza==="PAGAMENTO";
+              return(
+                <tr key={r.id} style={{
+                  background:r.ignorada?"transparent":r.isNew?C.amberSoft:"transparent",
+                  opacity:r.ignorada?0.42:1}}>
+                  <td style={{...td,color:C.textMuted,whiteSpace:"nowrap"}}>{dataCurta(r.data)||r.data}</td>
+                  <td style={td}>
+                    <div style={{fontWeight:500,textDecoration:r.ignorada?"line-through":"none"}}>{r.nome}</div>
+                    <div style={{fontSize:10,color:C.textMuted,display:"flex",gap:6}}>
+                      {r.parcela&&<span>{r.parcela}</span>}
+                      {pag&&<span style={{color:C.blue600}}>pagamento</span>}
+                      {r.natureza==="ESTORNO"&&<span style={{color:C.green600}}>estorno</span>}
+                      {leg&&<span style={{color:C.textMuted}}>legado</span>}
+                    </div>
+                  </td>
+                  <td style={{...td,color:C.textDim,whiteSpace:"nowrap",fontSize:11}}>{r.cartao||"—"}</td>
+                  <td style={{...td,fontWeight:600,fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap",
+                    color:r.valor<0?C.green600:C.text}}>{fmtBRL(r.valor)}</td>
+                  <td style={td}>
+                    <select value={r.dono} disabled={pag}
+                      onChange={e=>leg?onLegado(r.id,"dono",e.target.value):onCampo(r,"dono",e.target.value)}
+                      style={{...sel,width:88,opacity:pag?0.4:1,borderColor:!r.dono&&!pag?C.amber100:C.border}}>
+                      <option value="">—</option>{DONOS.map(d=><option key={d}>{d}</option>)}
+                    </select>
+                  </td>
+                  <td style={td}>
+                    <select value={r.parcelas} disabled={pag}
+                      onChange={e=>leg?onLegado(r.id,"parcelas",e.target.value):onCampo(r,"classificacao",e.target.value)}
+                      style={{...sel,width:100,opacity:pag?0.4:1}}>{PARC_OPTS.map(d=><option key={d}>{d}</option>)}</select>
+                  </td>
+                  <td style={td}>
+                    <input value={r.obs} disabled={pag}
+                      onChange={e=>leg?onLegado(r.id,"obs",e.target.value):onCampo(r,"obs",e.target.value)}
+                      style={{...inp,width:85,opacity:pag?0.4:1}}/>
+                  </td>
+                  <td style={td}><div style={{display:"flex",gap:4}}>
+                    {!leg&&r.isNew&&r.dono&&(
+                      <Btn small onClick={()=>onAprender(r)} title="Salvar no dicionário"
+                        style={{color:C.green600,borderColor:C.green100,background:C.green50}}>Aprender</Btn>
+                    )}
+                    {leg
+                      ?<Btn danger small title="Remover" onClick={()=>onRemoverLegado(r.id)}>✕</Btn>
+                      :<Btn small danger={!r.ignorada} title={r.ignorada?"Voltar a contar":"Ignorar — sai dos totais"}
+                          onClick={()=>onIgnorar(r,!r.ignorada)}>{r.ignorada?"↩":"🚫"}</Btn>}
+                  </div></td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      {vis.length===0&&<EmptyState icon="🔍">Nenhum lançamento com esse filtro.</EmptyState>}
     </div>
   );
 }
@@ -314,21 +644,28 @@ export default function App(){
   const [faturaTab,setFaturaTab]=useState(0);
   const [mesRef,setMesRef]=useState(mesAtualKey);
   const [dict,setDict]=useState([]);
-  const [dadosMes,setDadosMes]=useState({});
-  const [csvRaw,setCsvRaw]=useState("");
-  const [csvError,setCsvError]=useState("");
+  const [dadosMes,setDadosMes]=useState({});
   const [filtro,setFiltro]=useState("TODOS");
   const [copied,setCopied]=useState(false);
   const [showCopy,setShowCopy]=useState(false);
   const [showMeses,setShowMeses]=useState(false);
   const [confirmar,setConfirmar]=useState(null);
+  // ── Open Finance ──────────────────────────────────────────────────────
+  const [ofTransacoes,setOfTransacoes]=useState([]);
+  const [ofCartoes,setOfCartoes]=useState([]);
+  const [ofFaturas,setOfFaturas]=useState([]);
+  const [ofStatus,setOfStatus]=useState({});
+  const [ajustes,setAjustes]=useState({});
+  const [mostrarIgnoradas,setMostrarIgnoradas]=useState(false);
+  const [mostrarPagamentos,setMostrarPagamentos]=useState(false);
+  const [pedindoSync,setPedindoSync]=useState(false);
+  const [showCartoes,setShowCartoes]=useState(false);
   const [modal,setModal]=useState(null);
   const [pago,setPago]=useState({});
-  const [faturaLixo,setFaturaLixo]=useState(null);
   const [authStatus,setAuthStatus]=useState(()=>getStoredToken()?"ok":"idle");
   const [syncStatus,setSyncStatus]=useState("");
-  const fileRef=useRef();
   const syncTimer=useRef(null);
+  const ajusteTimer=useRef(null);
   const isMobile=useMediaQuery("(max-width: 720px)");
 
   // ── Auto-load se já tem token ─────────────────────────────────────────────
@@ -381,6 +718,69 @@ export default function App(){
     },1200);
   },[]);
 
+  // ── Sync dos ajustes (aba própria, escritor único: o app) ─────────────────
+  const syncAjustes=useCallback(mapa=>{
+    if(!getStoredToken()) return;
+    clearTimeout(ajusteTimer.current);
+    ajusteTimer.current=setTimeout(async()=>{
+      setSyncStatus("salvando...");
+      try{
+        await sheetsClear("OF_AJUSTES!A2:I");
+        const linhas=Object.values(mapa).filter(a=>!ajusteVazio(a)).map(ajusteToRow);
+        if(linhas.length) await sheetsAppend("OF_AJUSTES!A2",linhas);
+        setSyncStatus("salvo ✓");
+        setTimeout(()=>setSyncStatus(""),2500);
+      }catch(e){
+        console.error(e);
+        setSyncStatus("erro ao salvar");
+      }
+    },1200);
+  },[]);
+
+  /** Aplica uma alteração de ajuste e agenda a gravação. */
+  const setAjuste=(tipo,refId,patch,fingerprint)=>{
+    setAjustes(prev=>{
+      const k=chaveAjuste(tipo,refId);
+      const atual=prev[k]||{tipo,refId,dono:"",classificacao:"",obs:"",ignorada:false,
+        mesRefOverride:"",apelido:"",fingerprint:fingerprint||""};
+      const novo={...atual,...patch,tipo,refId,
+        fingerprint:fingerprint||atual.fingerprint||""};
+      const mapa={...prev,[k]:novo};
+      syncAjustes(mapa);
+      return mapa;
+    });
+  };
+
+  /**
+   * "Atualizar agora" sem endpoint público.
+   *
+   * O app grava a chave `pedido_sync` em OF_STATUS; um gatilho de 5 min do
+   * Apps Script vê o pedido e roda o sync. Evita expor um Web App anônimo e
+   * um shared secret no bundle — que é público, o site está no GitHub Pages.
+   *
+   * Escreve APENAS a célula do valor, para não apagar as chaves que o Apps
+   * Script mantém nessa aba.
+   */
+  const pedirSync=async()=>{
+    if(pedindoSync) return;
+    setPedindoSync(true);
+    setSyncStatus("pedindo atualização...");
+    try{
+      const linhas=await sheetsGet("OF_STATUS!A2:B");
+      const idx=linhas.findIndex(r=>String(r[0]||"").trim()==="pedido_sync");
+      const agora=new Date().toISOString();
+      if(idx>=0) await sheetsUpdate(`OF_STATUS!B${idx+2}`,[[agora]]);
+      else await sheetsAppend("OF_STATUS!A2",[["pedido_sync",agora]]);
+      setSyncStatus("atualização pedida ✓");
+      setTimeout(()=>setSyncStatus(""),4000);
+    }catch(e){
+      console.error(e);
+      setSyncStatus("erro ao pedir atualização");
+    }finally{
+      setPedindoSync(false);
+    }
+  };
+
   // ── Load all data ─────────────────────────────────────────────────────────
   async function loadAllData(){
     setSyncStatus("carregando...");
@@ -418,16 +818,46 @@ export default function App(){
         alvo[mes].push(rowToFatura(row));
       });
 
-      const allMeses=new Set([...Object.keys(byMesRD),...Object.keys(byMesInv),...Object.keys(byMesCC),...Object.keys(byMesMan)]);
+      // ── Open Finance (abas OF_*) ───────────────────────────────────────
+      // Toleram ausência: quem ainda não instalou o Apps Script simplesmente
+      // não tem essas abas, e o app segue funcionando com os dados legados.
+      let ofTx=[],ofCards=[],ofBills=[],ofAdj={},ofSt={};
+      try{
+        const[txRows,cardRows,billRows,adjRows,stRows]=await Promise.all([
+          sheetsGet("OF_TRANSACOES!A2:P"),
+          sheetsGet("OF_CARTOES!A2:H"),
+          sheetsGet("OF_FATURAS!A2:F"),
+          sheetsGet("OF_AJUSTES!A2:I"),
+          sheetsGet("OF_STATUS!A2:B"),
+        ]);
+        ofTx=txRows.filter(r=>r[0]).map(rowToOfTx);
+        ofCards=cardRows.filter(r=>r[0]).map(rowToOfCartao);
+        ofBills=billRows.filter(r=>r[0]).map(rowToOfFatura);
+        adjRows.filter(r=>r[1]).map(rowToAjuste).forEach(a=>{ofAdj[chaveAjuste(a.tipo,a.refId)]=a;});
+        stRows.filter(r=>r[0]).forEach(r=>{ofSt[r[0]]=r[1];});
+      }catch(e){
+        console.warn("Abas OF_* ausentes ou ilegíveis — seguindo só com dados legados.",e);
+      }
+      setOfTransacoes(ofTx);
+      setOfCartoes(ofCards);
+      setOfFaturas(ofBills);
+      setAjustes(ofAdj);
+      setOfStatus(ofSt);
+
+      const mesesOF=new Set(ofTx.map(t=>t.mesRef).filter(Boolean));
+      const allMeses=new Set([...Object.keys(byMesRD),...Object.keys(byMesInv),
+        ...Object.keys(byMesCC),...Object.keys(byMesMan),...mesesOF]);
       const novo={};
       allMeses.forEach(mes=>{
         novo[mes]={contas:byMesRD[mes]||[],investimentos:byMesInv[mes]||[],fatura:byMesCC[mes]||[],manual:byMesMan[mes]||[]};
       });
       setDadosMes(novo);
       if(allMeses.size>0){
-        // Chaves ANO-MÊS ordenam corretamente como string.
-        const ultimo=[...allMeses].sort().pop();
-        setMesRef(ultimo);
+        // Chaves ANO-MÊS ordenam corretamente como string. Prefere o mês
+        // corrente quando ele já tem dados; senão, o mais recente.
+        const atual=mesAtualKey();
+        const ordenados=[...allMeses].sort();
+        setMesRef(ordenados.includes(atual)?atual:ordenados[ordenados.length-1]);
       }
       setSyncStatus("salvo ✓");
       setTimeout(()=>setSyncStatus(""),2500);
@@ -464,17 +894,67 @@ export default function App(){
   const cur=getMes(mesRef);
   const fatura=cur.fatura,manual=cur.manual,contas=cur.contas,invest=cur.investimentos;
 
+  // ── Open Finance do mês selecionado ───────────────────────────────────────
+  const optsMerge={mesRef,mostrarIgnoradas,mostrarPagamentos};
+  const ofFechada=mergeFatura(ofTransacoes,ajustes,dict,ofCartoes,{...optsMerge,status:"POSTED"});
+  const ofAberta =mergeFatura(ofTransacoes,ajustes,dict,ofCartoes,{...optsMerge,status:"PENDING"});
+  const temOF=ofTransacoes.length>0;
+
+  // Cartões que aparecem no mês, para o cadastro e o cabeçalho.
+  const cartoesDoMes=[...new Set(
+    ofTransacoes.filter(t=>t.mesRef===mesRef).map(t=>t.accountId)
+  )].map(id=>ofCartoes.find(c=>c.accountId===id)||{accountId:id,nome:"Desconhecido",ultimos:""});
+
+  // Conciliação: o que calculamos × o que o banco diz. Sem isso, uma lacuna
+  // de dados do Pluggy viraria total errado em silêncio.
+  const conciliacao=cartoesDoMes.map(c=>{
+    const b=ofFaturas.find(f=>f.accountId===c.accountId&&f.mesRef===mesRef);
+    const nosso=totalFatura(mergeFatura(ofTransacoes,ajustes,dict,ofCartoes,
+      {mesRef,status:"POSTED",mostrarIgnoradas:true,mostrarPagamentos:true})
+      .filter(t=>t.accountId===c.accountId));
+    return{
+      accountId:c.accountId,
+      nome:nomeCartao(c.accountId,ofCartoes,ajustes),
+      nosso,
+      banco:b?b.totalBanco:null,
+      dif:b?nosso-b.totalBanco:null,
+    };
+  }).filter(c=>c.banco!==null);
+
+  const ultimoSync=ofStatus["ultimo_sync"]||"";
+  const erroSync=ofStatus["ultimo_erro"]||"";
+
+  // Linhas legadas (importadas por CSV antes do Open Finance) entram na aba
+  // "Fechada" junto com as do Pluggy, marcadas como tal.
+  const faturaLegado=fatura.map(r=>({...r,origem:"LEGADO",natureza:"COMPRA",ignorada:false,
+    cartao:r.cartao||"Outros"}));
+
+  // O checklist usa a fatura FECHADA e SEMPRE ignora o que foi marcado como
+  // ignorado e os pagamentos — independente dos toggles de exibição da tabela.
+  const ofParaChecklist=mergeFatura(ofTransacoes,ajustes,dict,ofCartoes,
+    {mesRef,status:"POSTED",mostrarIgnoradas:false,mostrarPagamentos:false});
+  const totalEmAberto=totalFatura(
+    mergeFatura(ofTransacoes,ajustes,dict,ofCartoes,
+      {mesRef,status:"PENDING",mostrarIgnoradas:false,mostrarPagamentos:false}));
+
   const updF=(id,f,v)=>withSync(mesRef,"fatura",c=>({fatura:c.fatura.map(r=>r.id===id?{...r,[f]:v}:r)}));
   const rmF=id=>withSync(mesRef,"fatura",c=>({fatura:c.fatura.filter(r=>r.id!==id)}));
-  const learnRow=row=>{
-    const key=normalize(row.nome).substring(0,25);
+
+  // ── Open Finance: as decisões do usuário vão para OF_AJUSTES ──────────────
+  const updOF=(tx,campo,valor)=>setAjuste("TX",tx.id,{[campo]:valor},tx.fingerprint);
+  const ignorarOF=(tx,val)=>setAjuste("TX",tx.id,{ignorada:val},tx.fingerprint);
+  const learnOF=tx=>{
+    const key=normalize(tx.nome).substring(0,25);
     if(key&&!dict.find(d=>d.key===key)){
-      const nd=[...dict,{key,dono:row.dono,parcelas:row.parcelas,obs:row.obs}];
+      const nd=[...dict,{key,dono:tx.dono,parcelas:tx.parcelas,obs:tx.obs}];
       setDict(nd);
       syncAll(dadosMes,nd,"dict");
     }
-    updF(row.id,"isNew",false);
+    // Grava também como ajuste: a decisão desta transação não deve depender
+    // de o dicionário continuar existindo.
+    setAjuste("TX",tx.id,{dono:tx.dono,classificacao:tx.parcelas,obs:tx.obs},tx.fingerprint);
   };
+  const renomearCartao=(accountId,apelido)=>setAjuste("CARTAO",accountId,{apelido});
 
   const updM=(id,f,v)=>withSync(mesRef,"manual",c=>({manual:c.manual.map(r=>r.id===id?{...r,[f]:v}:r)}));
   const rmM=id=>withSync(mesRef,"manual",c=>({manual:c.manual.filter(r=>r.id!==id)}));
@@ -500,35 +980,11 @@ export default function App(){
     });
   };
 
-  const parseCSV=useCallback(()=>{
-    setCsvError("");
-    const text=csvRaw.trim();
-    if(!text){setCsvError("Cole ou importe o CSV.");return;}
-    const allLines=text.split(/\r?\n/).map(l=>l.trim()).filter(l=>l.length>0);
-    let dataLines=allLines;
-    const first=parseCSVLine(allLines[0]).map(c=>c.toLowerCase());
-    if(first.some(c=>["data","date","lançamento","lancamento","valor","description"].includes(c))) dataLines=allLines.slice(1);
-    const rows=[],erros=[];
-    for(let i=0;i<dataLines.length;i++){
-      const cols=parseCSVLine(dataLines[i]);
-      if(cols.length<3){erros.push(`L${i+2}`);continue;}
-      const[rawData,rawDesc,rawValor]=cols;
-      const vs=String(rawValor).replace(/\s/g,"");
-      let valor=vs.includes(",")?parseFloat(vs.replace(/\./g,"").replace(",",".")):parseFloat(vs);
-      if(isNaN(valor)){erros.push(`L${i+2}`);continue;}
-      valor=Math.abs(valor);
-      const parcela=extractParcela(rawDesc),nome=stripParcela(rawDesc);
-      const hit=matchDict(nome,dict);
-      rows.push({id:uid(),data:rawData.trim(),nome,parcela,valor,dono:hit?.dono||"",parcelas:hit?(parcela?"PARCELADO":hit.parcelas):(parcela?"PARCELADO":"VARIÁVEL"),obs:hit?.obs||(hit?"":"NOVO"),cartao:"Itaú Black",isNew:!hit});
-    }
-    if(!rows.length){setCsvError("Nenhuma linha válida.");return;}
-    withSync(mesRef,"fatura",c=>({fatura:[...c.fatura,...rows]}));
-    setCsvError(erros.length?`${rows.length} importadas. Avisos: ${erros.join(", ")}`:"");
-  },[csvRaw,dict,mesRef,dadosMes]);
 
   // ── Checklist calc ────────────────────────────────────────────────────────
   const calcChecklist=()=>{
-    const allCartao=[...fatura,...manual];
+    // Fatura fechada do Open Finance + lançamentos manuais + histórico legado.
+    const allCartao=[...ofParaChecklist,...manual,...faturaLegado];
     let rendaCaulin=0,rendaLuanna=0,despCaulin=0,despLuanna=0;
     const contasList=[],invList=[];
     contas.forEach(r=>{
@@ -567,9 +1023,6 @@ export default function App(){
   };
 
   const vPessoa=(v,dono,pessoa)=>dono==="Dividido"?v/2:dono===pessoa?v:0;
-  const filtros=["TODOS","PARCELADO","RECORRENTE","VARIÁVEL","NOVO"];
-  const faturaFilt=fatura.filter(r=>filtro==="TODOS"?true:filtro==="NOVO"?r.isNew:r.parcelas===filtro);
-  const newCount=fatura.filter(r=>r.isNew).length;
   const mesesComDados=Object.keys(dadosMes);
   // Anos que têm dados + o ano do mês selecionado, para o seletor sempre poder voltar.
   const anosComDados=[...new Set([...mesesComDados.map(k=>mesPartes(k).ano),mesPartes(mesRef).ano])].filter(a=>!isNaN(a)).sort((a,b)=>b-a);
@@ -663,6 +1116,34 @@ export default function App(){
 
       {confirmar&&<ConfirmModal {...confirmar} onClose={()=>setConfirmar(null)}/>}
 
+      {showCartoes&&(
+        <Modal onClose={()=>setShowCartoes(false)}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+            <h3 style={{fontSize:15,fontWeight:600,margin:0,color:C.text}}>Cartões</h3>
+            <button onClick={()=>setShowCartoes(false)} style={{background:"none",border:"none",cursor:"pointer",color:C.textMuted,fontSize:20}}>✕</button>
+          </div>
+          <p style={{fontSize:12,color:C.textMuted,margin:"0 0 14px",lineHeight:1.6}}>
+            Vêm do Open Finance. O apelido é seu e aparece no checklist no lugar do nome do banco.
+          </p>
+          {ofCartoes.length===0&&<EmptyState icon="💳">Nenhum cartão sincronizado ainda.</EmptyState>}
+          {ofCartoes.map(c=>(
+            <div key={c.accountId} style={{borderTop:`1px solid ${C.borderSoft}`,padding:"11px 0"}}>
+              <div style={{fontSize:13,color:C.text,fontWeight:500}}>
+                {c.nome}{c.ultimos&&<span style={{color:C.textMuted,fontWeight:400}}> · final {c.ultimos}</span>}
+              </div>
+              <div style={{fontSize:11,color:C.textMuted,margin:"3px 0 7px"}}>
+                {c.limite>0&&<>limite {fmtBRL(c.limite)} · </>}
+                {c.fechamento&&<>fecha dia {c.fechamento} · </>}
+                {c.vencimento&&<>vence dia {c.vencimento}</>}
+              </div>
+              <input value={ajustes[chaveAjuste("CARTAO",c.accountId)]?.apelido||""}
+                onChange={e=>renomearCartao(c.accountId,e.target.value)}
+                placeholder="Apelido (ex.: Black do Caulin)" style={{...inp,maxWidth:280}}/>
+            </div>
+          ))}
+        </Modal>
+      )}
+
       <div style={{maxWidth:960,margin:"0 auto",padding:isMobile?"16px 12px":"24px 16px"}}>
 
         {/* Nav tabs */}
@@ -677,84 +1158,82 @@ export default function App(){
         {/* FATURA */}
         {tab===0&&(
           <div>
-            <div style={{display:"flex",gap:0,marginBottom:16}}>
-              {["📥 Importar CSV","✏️ Lançar manualmente"].map((t,i)=>(
-                <button key={t} className="gf-btn" onClick={()=>setFaturaTab(i)} style={{fontSize:12,padding:"7px 16px",border:`1px solid ${faturaTab===i?C.teal100:C.border}`,borderRadius:i===0?"8px 0 0 8px":"0 8px 8px 0",background:faturaTab===i?C.teal50:C.surfaceAlt,color:faturaTab===i?C.teal600:C.textDim,cursor:"pointer",fontWeight:faturaTab===i?700:500}}>
-                  {t}
+            <BarraOpenFinance
+              temOF={temOF} ultimoSync={ultimoSync} erroSync={erroSync}
+              conciliacao={conciliacao} pedindoSync={pedindoSync}
+              onAtualizar={pedirSync} onCartoes={()=>setShowCartoes(true)}
+              isMobile={isMobile}/>
+
+            <div style={{display:"flex",gap:0,marginBottom:14,flexWrap:"wrap"}}>
+              {[
+                {l:"🔴 Em aberto",n:ofAberta.length},
+                {l:"✅ Fechada",n:ofFechada.length+faturaLegado.length},
+                {l:"✏️ Manual",n:manual.length},
+              ].map((t,i)=>(
+                <button key={t.l} className="gf-btn" onClick={()=>setFaturaTab(i)}
+                  style={{fontSize:12,padding:"7px 14px",cursor:"pointer",
+                    border:`1px solid ${faturaTab===i?C.teal100:C.border}`,
+                    borderRadius:i===0?"8px 0 0 8px":i===2?"0 8px 8px 0":0,
+                    borderLeftWidth:i===0?1:0,
+                    background:faturaTab===i?C.teal50:C.surfaceAlt,
+                    color:faturaTab===i?C.teal600:C.textDim,
+                    fontWeight:faturaTab===i?700:500}}>
+                  {t.l}{t.n>0&&<span style={{marginLeft:6,opacity:0.7}}>{t.n}</span>}
                 </button>
               ))}
             </div>
 
+            {/* Em aberto — compras que ainda vão entrar na próxima fatura */}
             {faturaTab===0&&(
-              <div>
-                <div style={card}>
-                  <p style={{fontSize:13,color:C.textDim,marginBottom:10}}>Importando para <strong style={{color:C.text}}>{mesLabel(mesRef)}</strong> — CSV Itaú (separador <code>;</code> ou <code>,</code>).</p>
-                  <div style={{display:"flex",gap:8,marginBottom:10,flexWrap:"wrap"}}>
-                    <Btn onClick={()=>fileRef.current.click()}>📁 Importar arquivo</Btn>
-                    <input ref={fileRef} type="file" accept=".csv,.txt" style={{display:"none"}} onChange={e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=ev=>{setCsvRaw(ev.target.result);setCsvError("");};r.readAsText(f,"utf-8");}}/>
-                    {fatura.length>0&&!faturaLixo&&<Btn danger small onClick={()=>{setFaturaLixo(fatura);withSync(mesRef,"fatura",()=>({fatura:[]}));}}>🗑 Limpar fatura</Btn>}
-                    {faturaLixo&&<Btn small onClick={()=>{withSync(mesRef,"fatura",()=>({fatura:faturaLixo}));setFaturaLixo(null);}} style={{color:C.amber600,borderColor:C.amber600,background:C.amber50}}>↩ Desfazer</Btn>}
-                  </div>
-                  <textarea value={csvRaw} onChange={e=>{setCsvRaw(e.target.value);setCsvError("");}} placeholder={"data;lançamento;valor\n05/05/2026;AMAZON PRIME;39,90"} style={{...inp,height:90,resize:"vertical",fontFamily:"monospace",fontSize:12}}/>
-                  {csvError&&<p style={{fontSize:12,color:C.red600,marginTop:6,background:C.red50,border:`1px solid ${C.red100}`,padding:"7px 10px",borderRadius:8}}>{csvError}</p>}
-                  <div style={{marginTop:10}}><Btn active onClick={parseCSV}>⚡ Processar fatura</Btn></div>
-                </div>
-
-                {fatura.length>0&&(
-                  <div style={card}>
-                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12,flexWrap:"wrap",gap:8}}>
-                      <div style={{display:"flex",alignItems:"center",gap:8}}>
-                        <span style={{fontSize:14,fontWeight:600,color:C.text}}>{fatura.length} transações</span>
-                        {newCount>0&&<Badge color="new">{newCount} para revisar</Badge>}
-                      </div>
-                      <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
-                        {filtros.map(f=>(
-                          <button key={f} className="gf-btn" onClick={()=>setFiltro(f)} style={{fontSize:11,padding:"5px 10px",borderRadius:20,border:`1px solid ${filtro===f?C.teal100:C.border}`,background:filtro===f?C.teal50:"transparent",color:filtro===f?C.teal600:C.textDim,cursor:"pointer",fontWeight:filtro===f?700:500}}>
-                            {f}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                    <div style={{overflowX:"auto"}}>
-                      <table style={{width:"100%",fontSize:12,borderCollapse:"collapse",minWidth:520}}>
-                        <thead><tr style={{background:C.surfaceAlt}}>{["Data","Descrição","Valor","Dono","Parcelas","Obs",""].map(h=><th key={h} style={th}>{h}</th>)}</tr></thead>
-                        <tbody>
-                          {faturaFilt.map(r=>(
-                            <tr key={r.id} style={{background:r.isNew?C.amberSoft:"transparent"}}>
-                              <td style={{...td,color:C.textMuted,whiteSpace:"nowrap"}}>{r.data}</td>
-                              <td style={td}><div style={{fontWeight:500}}>{r.nome}</div>{r.parcela&&<div style={{fontSize:10,color:C.textMuted}}>{r.parcela}</div>}</td>
-                              <td style={{...td,fontWeight:600,fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{fmtBRL(r.valor)}</td>
-                              <td style={td}><select value={r.dono} onChange={e=>updF(r.id,"dono",e.target.value)} style={{...sel,width:88,borderColor:r.dono?C.border:C.amber100}}><option value="">—</option>{DONOS.map(d=><option key={d}>{d}</option>)}</select></td>
-                              <td style={td}><select value={r.parcelas} onChange={e=>updF(r.id,"parcelas",e.target.value)} style={{...sel,width:98}}>{PARC_OPTS.map(d=><option key={d}>{d}</option>)}</select></td>
-                              <td style={td}><input value={r.obs} onChange={e=>updF(r.id,"obs",e.target.value)} style={{...inp,width:85}}/></td>
-                              <td style={td}><div style={{display:"flex",gap:4}}>
-                                {r.isNew&&<Btn small onClick={()=>learnRow(r)} style={{color:C.green600,borderColor:C.green100,background:C.green50}}>Aprender</Btn>}
-                                <Btn danger small title="Remover" onClick={()=>rmF(r.id)}>✕</Btn>
-                              </div></td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                )}
-              </div>
+              ofAberta.length===0
+                ?<div style={card}><EmptyState icon="🔴">
+                    {temOF?`Nenhuma compra em aberto para ${mesLabel(mesRef)}.`
+                          :"Open Finance ainda não configurado. Veja docs/SETUP-PLUGGY.md."}
+                  </EmptyState></div>
+                :<TabelaFatura
+                    titulo="Fatura em aberto" subtitulo="ainda não fechou — pode mudar"
+                    linhas={ofAberta} cartoes={cartoesDoMes} isMobile={isMobile}
+                    filtro={filtro} setFiltro={setFiltro}
+                    mostrarIgnoradas={mostrarIgnoradas} setMostrarIgnoradas={setMostrarIgnoradas}
+                    mostrarPagamentos={mostrarPagamentos} setMostrarPagamentos={setMostrarPagamentos}
+                    onCampo={updOF} onIgnorar={ignorarOF} onAprender={learnOF}
+                    onLegado={updF} onRemoverLegado={rmF}/>
             )}
 
+            {/* Fechada — o que efetivamente vai ser pago */}
             {faturaTab===1&&(
+              (ofFechada.length+faturaLegado.length)===0
+                ?<div style={card}><EmptyState icon="✅">
+                    Nenhuma fatura fechada em {mesLabel(mesRef)}.
+                  </EmptyState></div>
+                :<TabelaFatura
+                    titulo="Fatura fechada" subtitulo="é o que entra no checklist"
+                    linhas={[...ofFechada,...faturaLegado]} cartoes={cartoesDoMes} isMobile={isMobile}
+                    filtro={filtro} setFiltro={setFiltro}
+                    mostrarIgnoradas={mostrarIgnoradas} setMostrarIgnoradas={setMostrarIgnoradas}
+                    mostrarPagamentos={mostrarPagamentos} setMostrarPagamentos={setMostrarPagamentos}
+                    onCampo={updOF} onIgnorar={ignorarOF} onAprender={learnOF}
+                    onLegado={updF} onRemoverLegado={rmF}/>
+            )}
+
+            {/* Manual — cartões sem conector, ou lançamento avulso */}
+            {faturaTab===2&&(
               <div style={card}>
-                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
-                  <div><span style={{fontSize:14,fontWeight:600,color:C.text}}>Outros cartões</span><span style={{fontSize:12,color:C.textMuted,marginLeft:8}}>{mesLabel(mesRef)}</span></div>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12,flexWrap:"wrap",gap:8}}>
+                  <div><span style={{fontSize:14,fontWeight:600,color:C.text}}>Lançamento manual</span><span style={{fontSize:12,color:C.textMuted,marginLeft:8}}>{mesLabel(mesRef)}</span></div>
                   <div style={{display:"flex",gap:6}}>
                     <Btn small onClick={()=>setShowCopy(true)}>📋 Copiar mês anterior</Btn>
                     <Btn active small onClick={addM}>+ Adicionar</Btn>
                   </div>
                 </div>
+                <p style={{fontSize:12,color:C.textMuted,margin:"0 0 12px",lineHeight:1.6}}>
+                  Para cartões sem conector no Open Finance, ou lançamentos que você queira somar à mão.
+                </p>
                 {showCopy&&<Modal onClose={()=>setShowCopy(false)}><CopyMesModal dadosMes={dadosMes} mesRef={mesRef} onClose={()=>setShowCopy(false)} onImport={handleCopyImport}/></Modal>}
                 {manual.length===0
-                  ?<EmptyState icon="💳">Nenhum lançamento. Clique em “+ Adicionar”.</EmptyState>
+                  ?<EmptyState icon="💳">Nenhum lançamento manual. Clique em “+ Adicionar”.</EmptyState>
                   :<div style={{overflowX:"auto"}}><table style={{width:"100%",fontSize:12,borderCollapse:"collapse",minWidth:540}}>
-                    <thead><tr style={{background:C.surfaceAlt}}>{["Data","Descrição","Valor","Cartão","Dono","Parcelas","Obs",""].map(h=><th key={h} style={th}>{h}</th>)}</tr></thead>
+                    <thead><tr style={{background:C.surfaceAlt}}>{["Data","Descrição","Valor","Cartão","Dono","Classificação","Obs",""].map(h=><th key={h} style={th}>{h}</th>)}</tr></thead>
                     <tbody>{manual.map(r=>(
                       <tr key={r.id}>
                         <td style={td}><input value={r.data} onChange={e=>updM(r.id,"data",e.target.value)} placeholder="dd/mm" style={{...inp,width:65}}/></td>
@@ -762,7 +1241,7 @@ export default function App(){
                         <td style={td}><input value={r.valor||""} onChange={e=>updM(r.id,"valor",parseFloat(e.target.value)||0)} type="number" step="0.01" style={{...inp,width:70}}/></td>
                         <td style={td}><input value={r.cartao} onChange={e=>updM(r.id,"cartao",e.target.value)} placeholder="Nubank…" style={{...inp,width:80}}/></td>
                         <td style={td}><select value={r.dono} onChange={e=>updM(r.id,"dono",e.target.value)} style={{...sel,width:82}}>{DONOS.map(d=><option key={d}>{d}</option>)}</select></td>
-                        <td style={td}><select value={r.parcelas} onChange={e=>updM(r.id,"parcelas",e.target.value)} style={{...sel,width:90}}>{PARC_OPTS.map(d=><option key={d}>{d}</option>)}</select></td>
+                        <td style={td}><select value={r.parcelas} onChange={e=>updM(r.id,"parcelas",e.target.value)} style={{...sel,width:98}}>{PARC_OPTS.map(d=><option key={d}>{d}</option>)}</select></td>
                         <td style={td}><input value={r.obs} onChange={e=>updM(r.id,"obs",e.target.value)} style={{...inp,width:80}}/></td>
                         <td style={td}><Btn danger small title="Remover" onClick={()=>setConfirmar({titulo:"Remover lançamento?",texto:`“${r.nome||"(sem descrição)"}” será removido de ${mesLabel(mesRef)}.`,onConfirm:()=>rmM(r.id)})}>✕</Btn></td>
                       </tr>
@@ -881,6 +1360,10 @@ export default function App(){
                 <MetricCard label="Despesas Caulin" value={fmtBRL(despCaulin)} accent="red" icon="📉"/>
                 <MetricCard label="Despesas Luanna" value={fmtBRL(despLuanna)} accent="purple" icon="📉"/>
                 <MetricCard label="Saldo Caulin" value={fmtBRL(saldoCaulin)} sub="após pagamentos" accent={saldoCaulin>=0?"green":"red"} icon="💵"/>
+                {totalEmAberto>0&&(
+                  <MetricCard label="Fatura em aberto" value={fmtBRL(totalEmAberto)}
+                    sub="ainda não fechou — fora do cálculo" accent="amber" icon="🔴"/>
+                )}
                 {totalFaturaCartoes.map(({nome,total,pagos})=>{
                   const pct=total>0?Math.round((pagos/total)*100):0;
                   return(
