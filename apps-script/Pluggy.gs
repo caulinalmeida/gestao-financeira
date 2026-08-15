@@ -1,0 +1,153 @@
+/**
+ * Cliente HTTP da API do Pluggy.
+ *
+ * Autenticação: POST /auth troca clientId+clientSecret por uma apiKey válida
+ * por ~2h, enviada depois no header X-API-KEY. A apiKey fica em cache para não
+ * gastar uma chamada de /auth a cada execução do poller (que roda de 5 em 5 min).
+ */
+
+var _apiKeyMemo = null;
+
+function pluggyApiKey() {
+  if (_apiKeyMemo) return _apiKeyMemo;
+
+  var cache = CacheService.getScriptCache();
+  var cacheada = cache.get('pluggy_api_key');
+  if (cacheada) { _apiKeyMemo = cacheada; return cacheada; }
+
+  var resp = UrlFetchApp.fetch(PLUGGY_API + '/auth', {
+    method: 'post',
+    contentType: 'application/json',
+    payload: JSON.stringify({
+      clientId: _prop('PLUGGY_CLIENT_ID', true),
+      clientSecret: _prop('PLUGGY_CLIENT_SECRET', true)
+    }),
+    muteHttpExceptions: true
+  });
+
+  var code = resp.getResponseCode();
+  if (code !== 200) {
+    throw new Error(
+      'Falha na autenticação com o Pluggy (HTTP ' + code + '). ' +
+      'Confira PLUGGY_CLIENT_ID e PLUGGY_CLIENT_SECRET.\n' +
+      resp.getContentText().slice(0, 300)
+    );
+  }
+
+  var apiKey = JSON.parse(resp.getContentText()).apiKey;
+  // 100 min < validade de 2h, com folga para uma execução longa.
+  cache.put('pluggy_api_key', apiKey, 100 * 60);
+  _apiKeyMemo = apiKey;
+  return apiKey;
+}
+
+/**
+ * GET autenticado. Devolve { ok, code, body }.
+ * Não lança em erro HTTP — quem chama decide, porque alguns 404 são esperados
+ * (ex.: endpoint de listagem de items pode não existir no plano).
+ */
+function pluggyGet(caminho, params) {
+  var url = PLUGGY_API + caminho;
+  if (params) {
+    var qs = Object.keys(params)
+      .filter(function (k) { return params[k] !== null && params[k] !== undefined && params[k] !== ''; })
+      .map(function (k) { return encodeURIComponent(k) + '=' + encodeURIComponent(params[k]); })
+      .join('&');
+    if (qs) url += (url.indexOf('?') === -1 ? '?' : '&') + qs;
+  }
+
+  var resp = UrlFetchApp.fetch(url, {
+    method: 'get',
+    headers: { 'X-API-KEY': pluggyApiKey() },
+    muteHttpExceptions: true
+  });
+
+  var code = resp.getResponseCode();
+  var texto = resp.getContentText();
+  var body = null;
+  try { body = JSON.parse(texto); } catch (e) { body = { raw: texto }; }
+
+  return { ok: code >= 200 && code < 300, code: code, body: body };
+}
+
+/**
+ * Descobre os items (conexões bancárias) a sincronizar.
+ *
+ * Tenta a listagem automática primeiro. Se a API não expuser esse endpoint,
+ * cai para a propriedade PLUGGY_ITEM_IDS. Rodar testarConexao() mostra qual
+ * caminho funcionou e imprime os IDs, caso você precise fixá-los na mão.
+ */
+function pluggyItems() {
+  var manuais = _prop('PLUGGY_ITEM_IDS', false);
+  if (manuais) {
+    var ids = manuais.split(',').map(function (s) { return s.trim(); }).filter(String);
+    if (ids.length) {
+      return { origem: 'PLUGGY_ITEM_IDS', ids: ids };
+    }
+  }
+
+  var r = pluggyGet('/items');
+  if (r.ok && r.body && r.body.results) {
+    return {
+      origem: 'descoberta automática (GET /items)',
+      ids: r.body.results.map(function (it) { return it.id; })
+    };
+  }
+
+  throw new Error(
+    'Não consegui listar os items automaticamente (HTTP ' + r.code + ').\n' +
+    'Adicione a propriedade do script PLUGGY_ITEM_IDS com os IDs separados por vírgula.\n' +
+    'Você encontra os IDs em dashboard.pluggy.ai → Applications → Items.'
+  );
+}
+
+function pluggyItem(itemId) {
+  return pluggyGet('/items/' + itemId);
+}
+
+/** Só contas de cartão de crédito — conta corrente está fora do escopo por ora. */
+function pluggyContasCredito(itemId) {
+  var r = pluggyGet('/accounts', { itemId: itemId, type: 'CREDIT' });
+  if (!r.ok) {
+    throw new Error('Falha ao listar contas do item ' + itemId + ' (HTTP ' + r.code + ')');
+  }
+  return (r.body && r.body.results) || [];
+}
+
+/** Faturas fechadas da conta — usadas para saber em que mês cada transação cai. */
+function pluggyFaturas(accountId) {
+  var r = pluggyGet('/bills', { accountId: accountId });
+  if (!r.ok) return []; // Nem todo conector expõe /bills; o sync tem fallback.
+  return (r.body && r.body.results) || [];
+}
+
+/**
+ * Transações da conta no período. A API v2 usa paginação por CURSOR:
+ * a resposta traz `next`, uma query string pronta para a próxima página.
+ */
+function pluggyTransacoes(accountId, dataDe, dataAte) {
+  var todas = [];
+  var params = { accountId: accountId, dateFrom: dataDe, dateTo: dataAte };
+  var caminho = '/v2/transactions';
+  var guarda = 0;
+
+  while (true) {
+    var r = pluggyGet(caminho, params);
+    if (!r.ok) {
+      throw new Error('Falha ao listar transações da conta ' + accountId + ' (HTTP ' + r.code + ')');
+    }
+    var res = (r.body && r.body.results) || [];
+    todas = todas.concat(res);
+
+    var next = r.body && r.body.next;
+    if (!next) break;
+
+    // `next` já vem como query string completa; params vão embutidos nela.
+    caminho = '/v2/transactions' + (next.charAt(0) === '?' ? next : '?' + next);
+    params = null;
+
+    if (++guarda > 100) break; // trava de segurança contra loop infinito
+  }
+
+  return todas;
+}
