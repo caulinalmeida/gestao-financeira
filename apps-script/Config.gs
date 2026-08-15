@@ -25,8 +25,10 @@ var JANELA_DIAS_ATRAS = 120;
 var JANELA_DIAS_FRENTE = 90;
 
 // Cabeçalhos. A ORDEM É CONTRATO — o App.jsx lê por posição de coluna.
+// `tipo`: COMPRA | PAGAMENTO | ESTORNO. O banco não soma o pagamento da fatura
+// no total, então o app precisa distinguir para bater o valor.
 var COLS_TRANSACOES = [
-  'pluggy_tx_id','account_id','mes_ref','origem_mes','data','descricao','valor',
+  'pluggy_tx_id','account_id','mes_ref','origem_mes','tipo','data','descricao','valor',
   'status','bill_id','parcela_num','parcela_total','valor_total','data_compra',
   'fingerprint','atualizado_em'
 ];

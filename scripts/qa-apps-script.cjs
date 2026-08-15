@@ -95,25 +95,50 @@ let r = dm({ date: '2026-08-10T00:00:00Z', creditCardMetadata: { billId: 'b1' } 
 ok('billId conhecido → BILL', r.origem === 'BILL', JSON.stringify(r));
 eq('  mês vem do vencimento da fatura', r.mes, '2026-09');
 
-r = dm({ date: '2026-08-10T00:00:00Z', creditCardMetadata: { billForecastDate: '2026-09' } }, {}, 15);
-ok('sem billId, com previsão → FORECAST', r.origem === 'FORECAST', JSON.stringify(r));
-eq('  mês vem da previsão', r.mes, '2026-09');
+// Casos ancorados nos dados REAIS do Itaú: fecha dia 3, vence dia 10.
+// Verificado contra a fatura do banco em 15/08/2026.
+console.log('     -- ciclo real do Itaú: fecha 3, vence 10 --');
+r = dm({ date: '2026-07-02T00:00:00Z', creditCardMetadata: {} }, {}, 3, 10);
+eq('compra 02/07 (véspera do fechamento) → fatura de julho', r.mes, '2026-07');
+r = dm({ date: '2026-07-03T00:00:00Z', creditCardMetadata: {} }, {}, 3, 10);
+eq('compra 03/07 (NO dia do fechamento) → fatura de agosto', r.mes, '2026-08');
+r = dm({ date: '2026-08-10T00:00:00Z', creditCardMetadata: {} }, {}, 3, 10);
+eq('compra 10/08 (fatura em aberto) → fatura de setembro', r.mes, '2026-09');
+ok('sem billId mas com fechamento → CICLO', r.origem === 'CICLO', JSON.stringify(r));
 
-r = dm({ date: '2026-08-10T00:00:00Z', creditCardMetadata: {} }, {}, 15);
-ok('sem nada → ESTIMADO', r.origem === 'ESTIMADO');
-eq('  compra ANTES do fechamento fica no mês', r.mes, '2026-08');
+r = dm({ date: '2026-12-05T00:00:00Z', creditCardMetadata: {} }, {}, 3, 10);
+eq('virada de ano: 05/12 c/ fech. 3 → jan seguinte', r.mes, '2027-01');
 
-r = dm({ date: '2026-08-20T00:00:00Z', creditCardMetadata: {} }, {}, 15);
-eq('compra DEPOIS do fechamento vai p/ mês seguinte', r.mes, '2026-09');
+// O billForecastDate usa outra convenção de mês; só entra se não houver ciclo.
+r = dm({ date: '2026-08-10T00:00:00Z', creditCardMetadata: { billForecastDate: '2026-08' } }, {}, 3, 10);
+eq('ciclo TEM precedência sobre billForecastDate', r.mes, '2026-09');
+ok('  e a regra registrada é CICLO', r.origem === 'CICLO');
 
-r = dm({ date: '2026-12-20T00:00:00Z', creditCardMetadata: {} }, {}, 15);
-eq('virada de ano: dez/20 c/ fech. 15 → jan seguinte', r.mes, '2027-01');
+r = dm({ date: '2026-08-10T00:00:00Z', creditCardMetadata: { billForecastDate: '2026-09' } }, {}, null);
+ok('sem dia de fechamento → cai em FORECAST', r.origem === 'FORECAST', JSON.stringify(r));
+eq('  e usa a previsão do Pluggy', r.mes, '2026-09');
 
-r = dm({ date: '2026-08-20T00:00:00Z', creditCardMetadata: { billId: 'inexistente' } }, {}, 15);
-ok('billId desconhecido cai no fallback', r.origem === 'ESTIMADO');
+r = dm({ date: '2026-08-20T00:00:00Z', creditCardMetadata: { billId: 'inexistente' } }, {}, 3, 10);
+ok('billId desconhecido cai no ciclo', r.origem === 'CICLO');
 
-r = dm({ date: '2026-08-20T00:00:00Z', creditCardMetadata: { billForecastDate: 'lixo' } }, {}, 15);
-ok('billForecastDate malformado é rejeitado', r.origem === 'ESTIMADO');
+r = dm({ date: '2026-08-20T00:00:00Z', creditCardMetadata: { billForecastDate: 'lixo' } }, {}, null);
+ok('billForecastDate malformado é rejeitado', r.origem === 'FORECAST');
+eq('  e usa o mês da transação', r.mes, '2026-08');
+
+// Banco que vence ANTES de fechar (vencimento no mês seguinte ao fechamento).
+r = dm({ date: '2026-08-10T00:00:00Z', creditCardMetadata: {} }, {}, 25, 5);
+eq('fecha 25 / vence 5 do mês seguinte: compra 10/08 → set', r.mes, '2026-09');
+
+// ── 5c. Natureza da transação ───────────────────────────────────────────────
+console.log('\n=== 5c. _tipoTransacao (o banco não soma o pagamento) ===');
+const tt = sandbox._tipoTransacao;
+eq('compra comum', tt({ description: 'IFOOD *REST', amount: 57.9 }), 'COMPRA');
+eq('"Pagamento recebido" → PAGAMENTO', tt({ description: 'Pagamento recebido', amount: -5645.77 }), 'PAGAMENTO');
+eq('"PGTO FATURA" → PAGAMENTO', tt({ description: 'PGTO FATURA ANTERIOR', amount: -1240 }), 'PAGAMENTO');
+eq('estorno → ESTORNO', tt({ description: 'ESTORNO IFOOD', amount: -94.6 }), 'ESTORNO');
+eq('crédito sem palavra-chave → ESTORNO', tt({ description: 'DEVOLUCAO LOJA', amount: -30 }), 'ESTORNO');
+ok('"PAGAMENTO" positivo NÃO vira pagamento (é compra numa loja com esse nome)',
+   tt({ description: 'CASA DE PAGAMENTOS LTDA', amount: 50 }) === 'COMPRA');
 
 // ── 5b. Dia de fechamento (Itaú devolve balanceCloseDate nulo) ──────────────
 console.log('\n=== 5b. _diaFechamento ===');
@@ -235,6 +260,17 @@ try {
      new Set(txs.map(l => l[iOrigem])).size === 3,
      [...new Set(txs.map(l => l[iOrigem]))].join(','));
   ok('todo valor é número', txs.every(l => typeof l[iValor] === 'number'));
+
+  const iTipo = sandbox.COLS_TRANSACOES.indexOf('tipo');
+  const tipos = new Set(txs.map(l => l[iTipo]));
+  ok('fixtures cobrem COMPRA, PAGAMENTO e ESTORNO',
+     tipos.has('COMPRA') && tipos.has('PAGAMENTO') && tipos.has('ESTORNO'),
+     [...tipos].join(','));
+  // O total da fatura ignora o pagamento — é assim que o banco calcula.
+  const totalComPagto = txs.reduce((a, l) => a + l[iValor], 0);
+  const totalSemPagto = txs.filter(l => l[iTipo] !== 'PAGAMENTO').reduce((a, l) => a + l[iValor], 0);
+  ok('excluir PAGAMENTO muda o total (senão o valor não bate com o banco)',
+     Math.abs(totalComPagto - totalSemPagto) > 1);
 
   const meses = [...new Set(txs.map(l => l[iMes]))].sort();
   ok('cobre 3 meses distintos', meses.length === 3, meses.join(','));

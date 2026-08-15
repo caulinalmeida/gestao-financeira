@@ -95,9 +95,20 @@ function gravarCartoes(cartoes) {
  * sincronizadas. Histórico fora da janela fica intacto, e transações que o
  * Pluggy apagou desaparecem corretamente (porque a janela inteira é reescrita).
  */
+/** Índice de uma coluna pelo nome — evita depender de posição literal. */
+function col(colunas, nome) {
+  var i = colunas.indexOf(nome);
+  if (i === -1) throw new Error('Coluna "' + nome + '" não existe no contrato.');
+  return i;
+}
+
 function gravarTransacoes(novas, accountIds, dataDe, dataAte) {
   var s = aba(ABA_TRANSACOES, COLS_TRANSACOES);
   var n = COLS_TRANSACOES.length;
+  var iId = col(COLS_TRANSACOES, 'pluggy_tx_id');
+  var iConta = col(COLS_TRANSACOES, 'account_id');
+  var iData = col(COLS_TRANSACOES, 'data');
+
   var existentes = lerLinhas(s, n);
 
   var contas = {};
@@ -107,25 +118,24 @@ function gravarTransacoes(novas, accountIds, dataDe, dataAte) {
   var ate = new Date(dataAte + 'T23:59:59Z').getTime();
 
   var preservadas = existentes.filter(function (l) {
-    if (!l[0]) return false;                       // linha vazia
-    if (!contas[String(l[1])]) return true;        // conta que não sincronizamos
-    var t = new Date(l[4]).getTime();
-    if (isNaN(t)) return true;                     // data ilegível: preserva por segurança
-    return t < de || t > ate;                      // fora da janela: preserva
+    if (!l[iId]) return false;                       // linha vazia
+    if (!contas[String(l[iConta])]) return true;     // conta que não sincronizamos
+    var t = new Date(l[iData]).getTime();
+    if (isNaN(t)) return true;                       // data ilegível: preserva por segurança
+    return t < de || t > ate;                        // fora da janela: preserva
   });
 
   var agora = new Date();
+  // Monta cada linha a partir do contrato de colunas, na ordem declarada.
   var linhasNovas = novas.map(function (t) {
-    return [
-      t.pluggy_tx_id, t.account_id, t.mes_ref, t.origem_mes, t.data, t.descricao,
-      t.valor, t.status, t.bill_id, t.parcela_num, t.parcela_total,
-      t.valor_total, t.data_compra, t.fingerprint, agora
-    ];
+    return COLS_TRANSACOES.map(function (c) {
+      return c === 'atualizado_em' ? agora : (t[c] === undefined ? '' : t[c]);
+    });
   });
 
   var todas = preservadas.concat(linhasNovas);
   // Ordena por data desc para a aba ficar legível quando inspecionada na mão.
-  todas.sort(function (a, b) { return new Date(b[4]) - new Date(a[4]); });
+  todas.sort(function (a, b) { return new Date(b[iData]) - new Date(a[iData]); });
 
   escreverLinhas(s, todas, n);
   return { preservadas: preservadas.length, gravadas: linhasNovas.length, total: todas.length };

@@ -45,11 +45,29 @@ function _diaFechamento(cd, faturas) {
     .filter(function (d) { return d && !isNaN(d.getTime()); })
     .map(function (d) { return d.getUTCDate(); });
 
-  if (!dias.length) return null;
+  return _maisFrequente(dias);
+}
 
-  // Dia mais frequente entre as faturas (robusto a fechamento em fim de semana).
+/** Dia de vencimento, pela mesma lógica. */
+function _diaVencimento(cd, faturas) {
+  var dias = (faturas || [])
+    .map(function (b) { return b && b.dueDate ? new Date(b.dueDate) : null; })
+    .filter(function (d) { return d && !isNaN(d.getTime()); })
+    .map(function (d) { return d.getUTCDate(); });
+  if (dias.length) return _maisFrequente(dias);
+
+  if (cd && cd.balanceDueDate) {
+    var d = new Date(cd.balanceDueDate);
+    if (!isNaN(d.getTime())) return d.getUTCDate();
+  }
+  return null;
+}
+
+/** Valor mais frequente — robusto a fechamento/vencimento caindo em feriado. */
+function _maisFrequente(valores) {
+  if (!valores || !valores.length) return null;
   var cont = {}, melhor = null, max = 0;
-  dias.forEach(function (x) {
+  valores.forEach(function (x) {
     cont[x] = (cont[x] || 0) + 1;
     if (cont[x] > max) { max = cont[x]; melhor = x; }
   });
@@ -57,21 +75,61 @@ function _diaFechamento(cd, faturas) {
 }
 
 /**
- * Em que fatura a transação cai. Três estratégias, da mais confiável para a
- * menos — `origem_mes` registra qual foi usada, o que torna o QA possível.
+ * Mês da fatura pelo CICLO do cartão.
  *
- *   BILL      a transação já tem billId e a fatura tem vencimento conhecido
- *   FORECAST  o Pluggy previu a fatura (billForecastDate), típico de PENDING
- *   ESTIMADO  calculado pelo dia de fechamento do cartão (último recurso)
+ * Convenção do projeto: o mês é o do VENCIMENTO da fatura — a mesma que o
+ * banco usa e que a regra BILL reproduz.
+ *
+ * Verificado contra os dados reais do Itaú (fecha dia 3, vence dia 10):
+ *   compra 02/07 → fatura que fecha 03/07, vence 10/07 → 2026-07
+ *   compra 03/07 → fatura que fecha 03/08, vence 10/08 → 2026-08
+ *
+ * Ou seja, a compra NO dia do fechamento já entra no ciclo seguinte: o teste
+ * é `dia >= diaFechamento`, não `>`.
  */
-function _derivarMes(tx, mapaFaturas, diaFechamento) {
+function _mesPorCiclo(dataTx, diaFechamento, diaVencimento) {
+  var d = new Date(dataTx);
+  if (isNaN(d.getTime())) return null;
+
+  var ano = d.getUTCFullYear(), mes = d.getUTCMonth();
+  if (diaFechamento && d.getUTCDate() >= diaFechamento) {
+    mes += 1;
+  }
+  // Vencimento antes do fechamento significa que a fatura vence no mês
+  // seguinte ao do fechamento (não é o caso do Itaú, mas outros bancos usam).
+  if (diaVencimento && diaFechamento && diaVencimento < diaFechamento) {
+    mes += 1;
+  }
+  while (mes > 11) { mes -= 12; ano += 1; }
+  return _mesKey(ano, mes);
+}
+
+/**
+ * Em que fatura a transação cai. `origem_mes` registra a regra usada, o que
+ * torna o QA possível.
+ *
+ *   BILL      tem billId e sabemos o vencimento da fatura — autoritativo
+ *   CICLO     calculado pelo dia de fechamento, mesma convenção do BILL
+ *   FORECAST  billForecastDate do Pluggy — último recurso
+ *
+ * Por que FORECAST caiu para último: o `billForecastDate` usa uma convenção de
+ * mês DIFERENTE do vencimento (aparentemente o início do período de apuração).
+ * Confiar nele misturava duas convenções e jogava as compras em aberto um mês
+ * para trás. O ciclo é determinístico e concorda com o banco.
+ */
+function _derivarMes(tx, mapaFaturas, diaFechamento, diaVencimento) {
   var meta = tx.creditCardMetadata || {};
 
-  if (meta.billId && mapaFaturas[meta.billId]) {
+  if (meta.billId && mapaFaturas && mapaFaturas[meta.billId]) {
     var venc = new Date(mapaFaturas[meta.billId]);
     if (!isNaN(venc.getTime())) {
       return { mes: _mesKey(venc.getUTCFullYear(), venc.getUTCMonth()), origem: 'BILL' };
     }
+  }
+
+  if (diaFechamento) {
+    var m = _mesPorCiclo(tx.date, diaFechamento, diaVencimento);
+    if (m) return { mes: m, origem: 'CICLO' };
   }
 
   if (meta.billForecastDate && /^\d{4}-\d{2}$/.test(meta.billForecastDate)) {
@@ -79,18 +137,35 @@ function _derivarMes(tx, mapaFaturas, diaFechamento) {
   }
 
   var d = new Date(tx.date);
-  var ano = d.getUTCFullYear(), mes = d.getUTCMonth();
-  // Comprou depois do fechamento? Cai na fatura do mês seguinte.
-  if (diaFechamento && d.getUTCDate() > diaFechamento) {
-    mes += 1;
-    if (mes > 11) { mes = 0; ano += 1; }
-  }
-  return { mes: _mesKey(ano, mes), origem: 'ESTIMADO' };
+  return { mes: _mesKey(d.getUTCFullYear(), d.getUTCMonth()), origem: 'FORECAST' };
 }
 
-function _mapearTransacao(tx, conta, mapaFaturas, diaFechamento) {
+/**
+ * Natureza da transação — o banco NÃO soma o pagamento da fatura no total.
+ *
+ *   PAGAMENTO  "Pagamento recebido": quitação da fatura anterior. Não é
+ *              despesa; entra na fatura como crédito e precisa ficar fora
+ *              do total, senão o valor não bate com o app do banco.
+ *   ESTORNO    devolução de compra. Abate do total, corretamente.
+ *   COMPRA     tudo o mais.
+ */
+function _tipoTransacao(tx) {
+  var desc = _normalizar(tx.description || tx.descriptionRaw);
   var meta = tx.creditCardMetadata || {};
-  var m = _derivarMes(tx, mapaFaturas, diaFechamento);
+
+  if (meta.otherCreditsType === 'BILL_INSTALLMENT' || meta.otherCreditsType === 'REVOLVING_CREDIT') {
+    return 'COMPRA';
+  }
+  if (Number(tx.amount) < 0 && /\b(PAGAMENTO|PGTO|PAGTO)\b/.test(desc)) {
+    return 'PAGAMENTO';
+  }
+  if (Number(tx.amount) < 0) return 'ESTORNO';
+  return 'COMPRA';
+}
+
+function _mapearTransacao(tx, conta, mapaFaturas, diaFechamento, diaVencimento) {
+  var meta = tx.creditCardMetadata || {};
+  var m = _derivarMes(tx, mapaFaturas, diaFechamento, diaVencimento);
   var dataIso = _isoData(new Date(tx.date));
 
   return {
@@ -98,6 +173,7 @@ function _mapearTransacao(tx, conta, mapaFaturas, diaFechamento) {
     account_id: conta.id,
     mes_ref: m.mes,
     origem_mes: m.origem,
+    tipo: _tipoTransacao(tx),
     data: dataIso,
     descricao: tx.description || tx.descriptionRaw || '(sem descrição)',
     // Cartão de crédito no Pluggy: positivo = despesa, negativo = estorno/pagamento.
@@ -286,6 +362,7 @@ function sincronizar(motivo) {
           if (b && b.id && b.dueDate) mapaFaturas[b.id] = b.dueDate;
         });
         var diaFech = _diaFechamento(cd, faturas);
+        var diaVenc = _diaVencimento(cd, faturas);
 
         cartoes.push({
           account_id: c.id,
@@ -293,13 +370,13 @@ function sincronizar(motivo) {
           nome: c.name || c.marketingName || conector,
           ultimos_digitos: c.number ? String(c.number).slice(-4) : '',
           limite: cd.creditLimit || '',
-          fechamento: cd.balanceCloseDate || (diaFech ? 'dia ' + diaFech + ' (das faturas)' : ''),
-          vencimento: cd.balanceDueDate || ''
+          fechamento: diaFech || '',
+          vencimento: diaVenc || ''
         });
         accountIds.push(c.id);
 
         pluggyTransacoes(c.id, dataDe, dataAte).forEach(function (tx) {
-          transacoes.push(_mapearTransacao(tx, c, mapaFaturas, diaFech));
+          transacoes.push(_mapearTransacao(tx, c, mapaFaturas, diaFech, diaVenc));
         });
       });
     });

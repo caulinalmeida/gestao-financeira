@@ -82,9 +82,9 @@ function popularDadosExemplo() {
     [black, 20, 'MAGAZINE LUIZA',             249.90,  'PENDING', 'FORECAST', mesProximo, 4, 10, 2499.00],
     [black, 21, 'DECOLAR.COM',                583.33,  'PENDING', 'FORECAST', mesProximo, 2, 6,  3499.98],
     [black, 22, 'IFOOD *HAMBURGUERIA',         76.20,  'PENDING', 'FORECAST', mesProximo, '', '', ''],
-    [black, 23, 'LOJA QUE NUNCA COMPREI XYZ',  49.99,  'PENDING', 'ESTIMADO', mesProximo, '', '', ''],
+    [black, 23, 'LOJA QUE NUNCA COMPREI XYZ',  49.99,  'PENDING', 'CICLO', mesProximo, '', '', ''],
     [plat,  20, 'CARREFOUR',                  201.55,  'PENDING', 'FORECAST', mesProximo, '', '', ''],
-    [plat,  24, 'UBER *TRIP',                  28.40,  'PENDING', 'ESTIMADO', mesProximo, '', '', '']
+    [plat,  24, 'UBER *TRIP',                  28.40,  'PENDING', 'CICLO', mesProximo, '', '', '']
   ];
 
   var agora = new Date();
@@ -103,23 +103,29 @@ function popularDadosExemplo() {
       dataCompra = data;
     }
 
-    return [
-      PREFIXO_EXEMPLO + 'tx-' + _pad2(i + 1),
-      conta,
-      mesInfo.chave,
-      origemMes,
-      data,
-      desc,
-      valor,
-      status,
-      status === 'POSTED' ? PREFIXO_EXEMPLO + 'bill-' + mesInfo.chave : '',
-      parcNum,
-      parcTot,
-      valorTot,
-      dataCompra,
-      _normalizar(desc) + '|' + valor + '|' + data,
-      agora
-    ];
+    var reg = {
+      pluggy_tx_id: PREFIXO_EXEMPLO + 'tx-' + _pad2(i + 1),
+      account_id: conta,
+      mes_ref: mesInfo.chave,
+      origem_mes: origemMes,
+      tipo: _tipoTransacao({ description: desc, amount: valor }),
+      data: data,
+      descricao: desc,
+      valor: valor,
+      status: status,
+      bill_id: status === 'POSTED' ? PREFIXO_EXEMPLO + 'bill-' + mesInfo.chave : '',
+      parcela_num: parcNum,
+      parcela_total: parcTot,
+      valor_total: valorTot,
+      data_compra: dataCompra,
+      fingerprint: _normalizar(desc) + '|' + valor + '|' + data,
+      atualizado_em: agora
+    };
+
+    // Monta pelo contrato de colunas, não por posição literal.
+    return COLS_TRANSACOES.map(function (cn) {
+      return reg[cn] === undefined ? '' : reg[cn];
+    });
   });
 
   // Cartões

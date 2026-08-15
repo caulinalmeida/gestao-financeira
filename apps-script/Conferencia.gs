@@ -29,7 +29,8 @@ function _contasComContexto() {
         conta: c,
         faturas: faturas,
         mapaFaturas: mapa,
-        diaFech: _diaFechamento(c.creditData || {}, faturas)
+        diaFech: _diaFechamento(c.creditData || {}, faturas),
+        diaVenc: _diaVencimento(c.creditData || {}, faturas)
       });
     });
   });
@@ -72,29 +73,51 @@ function conferirFatura() {
     var txs = pluggyTransacoes(c.id, de, ate);
     if (!txs.length) { p('\n   ⚠️  Nenhuma transação na janela.'); return; }
 
-    // O que NÓS calculamos.
+    // O que NÓS calculamos. O total da fatura EXCLUI o pagamento recebido —
+    // é assim que o banco calcula, e é o que precisa bater.
     var porMes = {};
     txs.forEach(function (t) {
-      var d = _derivarMes(t, ctx.mapaFaturas, ctx.diaFech);
-      if (!porMes[d.mes]) porMes[d.mes] = { n: 0, soma: 0, pend: 0, post: 0, bill: 0, fore: 0, est: 0 };
-      var m = porMes[d.mes];
-      m.n++; m.soma += Number(t.amount || 0);
+      var d = _derivarMes(t, ctx.mapaFaturas, ctx.diaFech, ctx.diaVenc);
+      if (!porMes[d.mes]) {
+        porMes[d.mes] = { n: 0, fatura: 0, pagto: 0, pend: 0, post: 0, bill: 0, ciclo: 0, fore: 0 };
+      }
+      var m = porMes[d.mes], v = Number(t.amount || 0);
+      m.n++;
+      if (_tipoTransacao(t) === 'PAGAMENTO') m.pagto += v; else m.fatura += v;
       if (t.status === 'PENDING') m.pend++; else m.post++;
       if (d.origem === 'BILL') m.bill++;
-      else if (d.origem === 'FORECAST') m.fore++;
-      else m.est++;
+      else if (d.origem === 'CICLO') m.ciclo++;
+      else m.fore++;
+    });
+
+    // Total real por mês de vencimento, para conferência lado a lado.
+    var totalBanco = {};
+    ctx.faturas.forEach(function (b) {
+      if (!b || !b.dueDate) return;
+      var dv = new Date(b.dueDate);
+      if (isNaN(dv.getTime())) return;
+      totalBanco[_mesKey(dv.getUTCFullYear(), dv.getUTCMonth())] = Number(b.totalAmount || 0);
     });
 
     p('');
-    p('   O QUE CALCULAMOS:');
-    p('     mês       qtd    total          aberto/fechado   regra');
+    p('   CONFERÊNCIA (total da fatura, sem o pagamento):');
+    p('     mês        qtd     nós          banco         dif      regra');
     Object.keys(porMes).sort().forEach(function (mes) {
       var m = porMes[mes];
-      p('     ' + mes + '   ' + String(m.n).padStart(3) + '   ' +
-        _fmt(m.soma).padStart(13) + '    ' +
-        String(m.pend + ' pend / ' + m.post + ' post').padEnd(16) +
-        'B' + m.bill + ' F' + m.fore + ' E' + m.est);
+      var banco = totalBanco[mes];
+      var temBanco = banco !== undefined;
+      var dif = temBanco ? (m.fatura - banco) : null;
+      var marca = !temBanco ? '  —' : (Math.abs(dif) < 0.01 ? '  ✅' : '  ⚠️');
+      p('     ' + mes + '   ' + String(m.n).padStart(3) + '  ' +
+        _fmt(m.fatura).padStart(12) + '  ' +
+        (temBanco ? _fmt(banco).padStart(12) : '           ?') + '  ' +
+        (temBanco ? _fmt(dif).padStart(11) : '          -') + marca +
+        '   B' + m.bill + ' C' + m.ciclo + ' F' + m.fore);
+      if (m.pagto) p('              (pagamento recebido: ' + _fmt(m.pagto) + ' — fora do total)');
     });
+    p('');
+    p('     ✅ = bate com o banco · ⚠️ = divergente · — = fatura ainda não fechada');
+    p('     Meses na borda da janela ficam incompletos, é esperado.');
 
     // A virada de fatura é onde erro de mês aparece. Lista o entorno do
     // fechamento para inspeção visual.
@@ -108,7 +131,7 @@ function conferirFatura() {
 
       if (!viradas.length) p('     (nenhuma)');
       viradas.slice(0, 20).forEach(function (t) {
-        var d = _derivarMes(t, ctx.mapaFaturas, ctx.diaFech);
+        var d = _derivarMes(t, ctx.mapaFaturas, ctx.diaFech, ctx.diaVenc);
         p('     ' + String(t.date).slice(0, 10) + '  ' +
           String(t.description || '').slice(0, 26).padEnd(26) + ' ' +
           _fmt(t.amount).padStart(12) + '  ' +
@@ -120,7 +143,7 @@ function conferirFatura() {
     // fatura já vencida, a atribuição está errada.
     var pendPorMes = {};
     txs.filter(function (t) { return t.status === 'PENDING'; }).forEach(function (t) {
-      var d = _derivarMes(t, ctx.mapaFaturas, ctx.diaFech);
+      var d = _derivarMes(t, ctx.mapaFaturas, ctx.diaFech, ctx.diaVenc);
       pendPorMes[d.mes] = (pendPorMes[d.mes] || 0) + 1;
     });
     var mesesPend = Object.keys(pendPorMes).sort();
@@ -158,7 +181,7 @@ function conferirFaturaDetalhe(mesAlvo) {
   _contasComContexto().forEach(function (ctx) {
     var c = ctx.conta;
     var txs = pluggyTransacoes(c.id, de, ate).filter(function (t) {
-      return _derivarMes(t, ctx.mapaFaturas, ctx.diaFech).mes === mesAlvo;
+      return _derivarMes(t, ctx.mapaFaturas, ctx.diaFech, ctx.diaVenc).mes === mesAlvo;
     }).sort(function (a, b) { return new Date(a.date) - new Date(b.date); });
 
     p('');
@@ -168,7 +191,7 @@ function conferirFaturaDetalhe(mesAlvo) {
     var soma = 0;
     txs.forEach(function (t) {
       soma += Number(t.amount || 0);
-      var d = _derivarMes(t, ctx.mapaFaturas, ctx.diaFech);
+      var d = _derivarMes(t, ctx.mapaFaturas, ctx.diaFech, ctx.diaVenc);
       var mm = t.creditCardMetadata || {};
       var parc = mm.totalInstallments > 1
         ? ' [' + mm.installmentNumber + '/' + mm.totalInstallments + ']' : '';
