@@ -1,16 +1,58 @@
-# React + Vite
+# Gestão Financeira
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Controle financeiro doméstico para duas pessoas que dividem despesas. A fatura
+do cartão entra sozinha pelo Open Finance; a classificação de quem paga o quê
+continua sendo decisão humana.
 
-Currently, two official plugins are available:
+Publicado em <https://caulinalmeida.github.io/gestao-financeira>.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## Como funciona
 
-## React Compiler
+```
+Pluggy (Open Finance)          Google Sheets              App (React)
+        │                            │                         │
+        │  Apps Script, 1×/dia   ┌───┴────────┐                │
+        └───────────────────────►│ OF_*       │◄───────────────┤ lê tudo
+                                 │ (abas novas)│                │
+                                 └───┬────────┘                │
+                                     │ OF_AJUSTES ◄────────────┘ escreve
+                                     │ (decisões do usuário)      decisões
+```
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+O Pluggy é dono dos fatos — data, descrição, valor, parcela. Você é dono das
+decisões — de quem é, como classifica, o que ignorar. O sincronizador nunca
+sobrescreve uma decisão, e é isso que faz a categorização durar entre syncs.
 
-## Expanding the ESLint configuration
+**Regra que sustenta o desenho: cada aba da planilha tem um único escritor.**
+O app faz `clear + append` do que é dele; o Apps Script, do que é dele. Se os
+dois escrevessem na mesma aba, haveria perda de dados.
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+## Rodando
+
+```bash
+npm install
+npm run dev      # http://localhost:5173/gestao-financeira/
+npm run qa       # testes das funções puras + do sincronizador
+npm run lint
+npm run build
+```
+
+Publicar:
+
+```bash
+npm run deploy   # build + gh-pages
+git push         # mantém a main sincronizada
+```
+
+## Estrutura
+
+| Caminho | O que é |
+|---|---|
+| `src/App.jsx` | O app inteiro. Monolítico por design. |
+| `apps-script/` | O sincronizador do Pluggy. Colado no editor do Apps Script da planilha. |
+| `scripts/qa-*.cjs` | Testes. Extraem as funções puras e rodam fora do React. |
+| `docs/SETUP-PLUGGY.md` | Configuração externa, passo a passo. |
+| `CLAUDE.md` | Contexto completo: regras de negócio, decisões, o que não mexer. |
+
+Leia o `CLAUDE.md` antes de alterar qualquer coisa — as regras de negócio ali
+não são deriváveis do código.

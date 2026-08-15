@@ -19,16 +19,16 @@ const ANO_LEGADO = 2026;
 // as *600 (antes texto escuro) viraram tons vivos, legíveis sobre superfície escura.
 const C = {
   // superfícies e texto
-  bg:"#0F1115", surface:"#171A20", surfaceAlt:"#1E222A", surfaceHi:"#252A34",
+  bg:"#0F1115", surface:"#171A20", surfaceAlt:"#1E222A",
   border:"#2A2F3A", borderSoft:"#21252D",
   text:"#E7EAF0", textDim:"#98A0AE", textMuted:"#666E7D",
 
   teal50:"#0E3B31",  teal100:"#1C5C4B", teal600:"#2DD4A7", tealSoft:"rgba(45,212,167,0.10)",
-  purple50:"#2A2445",purple100:"#3B3468",purple600:"#A78BFA",purpleSoft:"rgba(167,139,250,0.10)",
+  purple50:"#2A2445",purple100:"#3B3468",purple600:"#A78BFA",
   amber50:"#3A2E14", amber100:"#5A4720", amber600:"#FBBF24",amberSoft:"rgba(251,191,36,0.10)",
   red50:"#3B1F22",   red100:"#5C2E33",  red600:"#F87171",  redSoft:"rgba(248,113,113,0.10)",
-  green50:"#16301F", green100:"#22482F",green600:"#4ADE80",greenSoft:"rgba(74,222,128,0.10)",
-  blue50:"#16283F",  blue100:"#23405F", blue600:"#60A5FA", blueSoft:"rgba(96,165,250,0.10)",
+  green50:"#16301F", green100:"#22482F",green600:"#4ADE80",
+  blue50:"#16283F",  blue100:"#23405F", blue600:"#60A5FA",
 };
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
