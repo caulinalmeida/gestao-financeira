@@ -1,111 +1,76 @@
-:root {
-  --text: #6b6375;
-  --text-h: #08060d;
-  --bg: #fff;
-  --border: #e5e4e7;
-  --code-bg: #f4f3ec;
-  --accent: #aa3bff;
-  --accent-bg: rgba(170, 59, 255, 0.1);
-  --accent-border: rgba(170, 59, 255, 0.5);
-  --social-bg: rgba(244, 243, 236, 0.5);
-  --shadow:
-    rgba(0, 0, 0, 0.1) 0 10px 15px -3px, rgba(0, 0, 0, 0.05) 0 4px 6px -2px;
+/* Base global do tema dark.
+   O app usa inline styles em App.jsx; este arquivo cobre só o que inline style
+   não alcança: controles nativos, foco, seleção, scrollbar e placeholders. */
 
-  --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --heading: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --mono: ui-monospace, Consolas, monospace;
+:root{
+  /* color-scheme: dark faz o navegador renderizar <select>, <option>,
+     checkbox, date picker e scrollbar em variante escura. Sem isso, os
+     dropdowns nativos aparecem brancos sobre o fundo escuro. */
+  color-scheme: dark;
 
-  font: 18px/145% var(--sans);
-  letter-spacing: 0.18px;
-  color-scheme: light dark;
-  color: var(--text);
-  background: var(--bg);
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-
-  @media (max-width: 1024px) {
-    font-size: 16px;
-  }
+  --gf-bg:#0F1115;
+  --gf-text:#E7EAF0;
+  --gf-teal:#2DD4A7;
+  --gf-border:#2A2F3A;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --text: #9ca3af;
-    --text-h: #f3f4f6;
-    --bg: #16171d;
-    --border: #2e303a;
-    --code-bg: #1f2028;
-    --accent: #c084fc;
-    --accent-bg: rgba(192, 132, 252, 0.15);
-    --accent-border: rgba(192, 132, 252, 0.5);
-    --social-bg: rgba(47, 48, 58, 0.5);
-    --shadow:
-      rgba(0, 0, 0, 0.4) 0 10px 15px -3px, rgba(0, 0, 0, 0.25) 0 4px 6px -2px;
-  }
+*{ box-sizing: border-box; }
 
-  #social .button-icon {
-    filter: invert(1) brightness(2);
-  }
+html,body,#root{ min-height:100%; }
+
+body{
+  margin:0;
+  background:var(--gf-bg);
+  color:var(--gf-text);
+  font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  -webkit-font-smoothing:antialiased;
+  -moz-osx-font-smoothing:grayscale;
 }
 
-body {
-  margin: 0;
+/* Foco visível e consistente — não existia antes, prejudicava navegação por
+   teclado e acessibilidade. :focus-visible não dispara em clique de mouse. */
+:focus{ outline:none; }
+:focus-visible{
+  outline:2px solid var(--gf-teal);
+  outline-offset:2px;
+  border-radius:6px;
 }
 
-#root {
-  width: 1126px;
-  max-width: 100%;
-  margin: 0 auto;
-  text-align: center;
-  border-inline: 1px solid var(--border);
-  min-height: 100svh;
-  display: flex;
-  flex-direction: column;
-  box-sizing: border-box;
+input,select,textarea,button{ font-family:inherit; font-size:inherit; }
+
+input::placeholder,textarea::placeholder{ color:#5A6270; opacity:1; }
+
+/* Hover sutil nos elementos interativos (inline style não faz :hover). */
+.gf-btn{ transition:filter .15s ease, background .15s ease; }
+.gf-btn:hover:not(:disabled){ filter:brightness(1.18); }
+.gf-btn:active:not(:disabled){ filter:brightness(0.94); }
+
+input:hover:not(:disabled),select:hover:not(:disabled),textarea:hover:not(:disabled){
+  border-color:#3A4150 !important;
+}
+input:focus,select:focus,textarea:focus{
+  border-color:var(--gf-teal) !important;
 }
 
-h1,
-h2 {
-  font-family: var(--heading);
-  font-weight: 500;
-  color: var(--text-h);
+/* Remove as setinhas do input[type=number] — o campo de valor fica mais limpo
+   e evita clique acidental que altera o valor. */
+input[type=number]{ -moz-appearance:textfield; }
+input[type=number]::-webkit-outer-spin-button,
+input[type=number]::-webkit-inner-spin-button{ -webkit-appearance:none; margin:0; }
+
+::selection{ background:rgba(45,212,167,0.28); color:#fff; }
+
+/* Scrollbar escura (WebKit). Firefox usa color-scheme acima. */
+::-webkit-scrollbar{ width:10px; height:10px; }
+::-webkit-scrollbar-track{ background:#14171C; }
+::-webkit-scrollbar-thumb{ background:#2E3540; border-radius:6px; border:2px solid #14171C; }
+::-webkit-scrollbar-thumb:hover{ background:#3C4450; }
+
+/* Tabelas com scroll horizontal no mobile: dica visual de que há mais conteúdo. */
+@media (max-width:720px){
+  table{ font-size:12px; }
 }
 
-h1 {
-  font-size: 56px;
-  letter-spacing: -1.68px;
-  margin: 32px 0;
-  @media (max-width: 1024px) {
-    font-size: 36px;
-    margin: 20px 0;
-  }
-}
-h2 {
-  font-size: 24px;
-  line-height: 118%;
-  letter-spacing: -0.24px;
-  margin: 0 0 8px;
-  @media (max-width: 1024px) {
-    font-size: 20px;
-  }
-}
-p {
-  margin: 0;
-}
-
-code,
-.counter {
-  font-family: var(--mono);
-  display: inline-flex;
-  border-radius: 4px;
-  color: var(--text-h);
-}
-
-code {
-  font-size: 15px;
-  line-height: 135%;
-  padding: 4px 8px;
-  background: var(--code-bg);
+@media (prefers-reduced-motion:reduce){
+  *{ animation-duration:.01ms !important; transition-duration:.01ms !important; }
 }

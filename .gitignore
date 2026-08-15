@@ -22,3 +22,11 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Config local de ferramentas (nao pertence ao repo publico)
+.claude.json
+.gitconfig
+
+# Apps Script — credenciais do clasp (NUNCA versionar)
+.clasprc.json
+apps-script/.clasp.json
