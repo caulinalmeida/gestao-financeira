@@ -70,11 +70,26 @@ O app faz `clear + append` total do que é dele; o Apps Script faz o mesmo do qu
 | Aba | Escritor |
 |---|---|
 | `RENDA_DESPESAS`, `CARTAO_CREDITO`, `INVESTIMENTOS`, `DICIONARIO`, `OF_AJUSTES`, `PESSOAS`, `CHECKLIST_PAGO` | **o app** |
-| `OF_TRANSACOES`, `OF_CARTOES`, `OF_FATURAS`, `OF_STATUS` | **o Apps Script** |
+| `OF_TRANSACOES`, `OF_CARTOES`, `OF_FATURAS`, `OF_STATUS`, `OF_SYNC_LOG` | **o Apps Script** |
 
 Exceção controlada e única: a chave `pedido_sync` em `OF_STATUS` é escrita pelo app (botão "Atualizar agora") e lida/limpa pelo Apps Script.
 
 `OF_AJUSTES`, `PESSOAS` e `CHECKLIST_PAGO` são escritas pelo app mas **criadas** pelo Apps Script (`garantirAbas()`), porque o app só sabe fazer clear/append — não sabe criar aba.
+
+### Frescor: três saltos, não um
+
+```
+BANCO ──①──► PLUGGY ──②──► PLANILHA ──③──► APP
+       (o Pluggy visita     (nosso sync)    (recarregar
+        no ritmo dele)                       a página)
+```
+
+Só o salto ② é nosso. O ① é do Pluggy e no Meu Pluggy **nem dá para forçar**.
+Se o ② rodar antes do ① no mesmo dia, o app fica um dia atrasado por
+construção — era o caso com um único sync às 5h. Por isso o padrão passou a ser
+**4 execuções/dia** (`HORAS_SYNC_PADRAO`, ajustável pela propriedade
+`HORAS_SYNC`). `OF_SYNC_LOG` registra cada observação, e `historicoSync()`
+mostra a que horas o Pluggy realmente visita — aí dá para alinhar o gatilho.
 
 ### Frescor: duas idades diferentes
 
@@ -244,6 +259,8 @@ A `chave` vem do **conteúdo** da linha, não do id — contas e investimentos r
 | `garantirAbas()` | Cria as abas que faltarem, com cabeçalho |
 | `atualizarDoBancoESincronizar()` | Força o Pluggy a ir ao banco e depois sincroniza |
 | `investigarParcelas()` | Agrupa as compras parceladas e diagnostica projeção errada |
+| `diagnosticoOpenFinance()` | Fotografia dos três saltos + campos crus do item |
+| `historicoSync()` | A que horas o Pluggy visita o banco, pelos dados de `OF_SYNC_LOG` |
 | `testarConexao()` | Valida credenciais e lista os cartões conectados |
 | `sincronizarAgora()` | Sync completo, na hora |
 | `conferirFatura()` | Compara nosso total com o do banco, mês a mês |

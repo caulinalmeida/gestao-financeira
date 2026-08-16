@@ -496,6 +496,22 @@ function sincronizar(motivo) {
       ultimo_erro: avisos.length ? avisos.join(' | ') : ''
     });
 
+    // Registra a observação. Duas colunas importam: quando NÓS lemos e quando o
+    // PLUGGY visitou o banco. Com alguns dias disso dá para saber o horário em
+    // que o Pluggy atualiza — e alinhar nosso gatilho — em vez de supor.
+    try {
+      var sLog = aba(ABA_SYNC_LOG, COLS_SYNC_LOG);
+      var maisNova = '';
+      transacoes.forEach(function (t) {
+        var d = String(t.data || '');
+        if (d && d <= _isoData(hoje) && d > maisNova) maisNova = d;   // ignora parcela futura
+      });
+      sLog.appendRow([new Date(), cartoes.length + ' cartão(ões)', '',
+        maisAntigoNoPluggy || '', '', new Date(), maisNova, motivo]);
+    } catch (eLog) {
+      Logger.log('Aviso: não consegui registrar em ' + ABA_SYNC_LOG + ': ' + eLog);
+    }
+
     Logger.log('Sync OK: ' + res.gravadas + ' transações de ' + cartoes.length + ' cartões (' + segundos + 's)');
     return 'ok';
 

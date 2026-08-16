@@ -10,6 +10,12 @@ function ok(nome, cond, extra) {
   if (cond) { passes++; console.log('  ✅ ' + nome); }
   else { falhas++; console.log('  ❌ ' + nome + (extra ? '  → ' + extra : '')); }
 }
+/** Igualdade estrutural — o eq() usa === e não serve para array. */
+function eqArr(nome, atual, esperado) {
+  ok(nome + ' = ' + JSON.stringify(esperado),
+     JSON.stringify(atual) === JSON.stringify(esperado),
+     'obteve ' + JSON.stringify(atual));
+}
 function eq(nome, atual, esperado) {
   ok(nome + ' = ' + JSON.stringify(esperado), atual === esperado,
      'obteve ' + JSON.stringify(atual));
@@ -35,7 +41,7 @@ const sandbox = {
   SpreadsheetApp: { getActive: () => { throw new Error('planilha não deve ser tocada no QA'); } },
   LockService: { getScriptLock: () => ({ tryLock: () => true, releaseLock: () => {} }) },
   ScriptApp: { getProjectTriggers: () => [], newTrigger: () => { throw new Error('no-op'); } },
-  Utilities: { sleep: () => {} },
+  Utilities: { sleep: () => {}, formatDate: (d, tz, f) => String(d) },
 };
 vm.createContext(sandbox);
 try {
@@ -337,6 +343,29 @@ try {
   console.log('     meses gerados: ' + meses.join(', '));
 } catch (e) {
   ok('popularDadosExemplo executa', false, e.message);
+}
+
+// ── 10. Horarios do sync (Triggers) ─────────────────────────────────────────
+console.log('');
+console.log('=== 10. _horasSync ===');
+{
+  const props = {};
+  sandbox.PropertiesService = { getScriptProperties: () => ({ getProperty: k => props[k] || null }) };
+  eqArr('sem propriedade, usa o padrao', sandbox._horasSync(), sandbox.HORAS_SYNC_PADRAO);
+  ok('o padrao tem mais de um horario -- um sync/dia atrasa o app em ate 24h',
+     sandbox.HORAS_SYNC_PADRAO.length > 1);
+
+  props.HORAS_SYNC = '7,13,20';
+  eqArr('le a propriedade', sandbox._horasSync(), [7, 13, 20]);
+  props.HORAS_SYNC = ' 8 , 20 ';
+  eqArr('tolera espacos', sandbox._horasSync(), [8, 20]);
+  props.HORAS_SYNC = '25,-1,abc,9';
+  eqArr('descarta hora invalida', sandbox._horasSync(), [9]);
+  props.HORAS_SYNC = 'lixo';
+  eqArr('propriedade so com lixo volta ao padrao', sandbox._horasSync(), sandbox.HORAS_SYNC_PADRAO);
+  props.HORAS_SYNC = '0,23';
+  eqArr('limites 0 e 23 sao validos', sandbox._horasSync(), [0, 23]);
+  delete props.HORAS_SYNC;
 }
 
 console.log('\n' + '='.repeat(52));

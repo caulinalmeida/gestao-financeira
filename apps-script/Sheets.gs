@@ -55,9 +55,10 @@ function garantirAbas() {
   aba(ABA_AJUSTES,    COLS_AJUSTES);
   aba(ABA_PESSOAS,    COLS_PESSOAS);
   aba(ABA_PAGO,       COLS_PAGO);
+  aba(ABA_SYNC_LOG,   COLS_SYNC_LOG);
   var msg = '✅ Abas prontas: ' + [ABA_TRANSACOES, ABA_CARTOES, ABA_FATURAS,
                                    ABA_STATUS, ABA_AJUSTES, ABA_PESSOAS,
-                                   ABA_PAGO].join(', ');
+                                   ABA_PAGO, ABA_SYNC_LOG].join(', ');
   Logger.log(msg);
   return msg;
 }

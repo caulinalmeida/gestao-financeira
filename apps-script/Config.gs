@@ -75,6 +75,17 @@ var COLS_PESSOAS = ['nome'];
 var ABA_PAGO  = 'CHECKLIST_PAGO';
 var COLS_PAGO = ['mes_ref','chave'];
 
+// Fuso para exibir horários nos diagnósticos. As datas em si são guardadas
+// como Date/ISO; isto é só apresentação.
+var FUSO = 'America/Sao_Paulo';
+
+// Registro append-only de cada sync: quando NÓS lemos × quando o PLUGGY visitou
+// o banco. É o que permite descobrir o horário em que o Pluggy atualiza, em vez
+// de supor. Escrita pelo Apps Script.
+var ABA_SYNC_LOG  = 'OF_SYNC_LOG';
+var COLS_SYNC_LOG = ['observado_em','conector','status','pluggy_visitou_em',
+                     'proximo_auto_sync','nosso_sync_em','tx_mais_recente','origem'];
+
 function _props() {
   return PropertiesService.getScriptProperties();
 }
