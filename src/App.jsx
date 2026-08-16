@@ -578,14 +578,24 @@ function DetalheCard({cor,linhas}){
   if(!visiveis.length) return null;
   return(
     <div style={{marginTop:10,paddingTop:8,borderTop:`1px solid ${cor}22`}}>
-      {visiveis.map(l=>(
-        <div key={l.rot} style={{display:"flex",justifyContent:"space-between",gap:8,
-          fontSize:11,color:cor,opacity:l.forte?0.95:0.7,padding:"2px 0",
-          fontWeight:l.forte?700:400}}>
-          <span>{l.rot}</span>
-          <span style={{fontVariantNumeric:"tabular-nums"}}>{fmtBRL(l.valor)}</span>
-        </div>
-      ))}
+      {visiveis.map(l=>{
+        const conteudo=(
+          <>
+            <span>{l.rot}{l.onClick&&<span style={{opacity:0.55}}> ›</span>}</span>
+            <span style={{fontVariantNumeric:"tabular-nums"}}>{fmtBRL(l.valor)}</span>
+          </>
+        );
+        const base={display:"flex",justifyContent:"space-between",gap:8,width:"100%",
+          fontSize:11,color:cor,opacity:l.forte?0.95:0.72,padding:"3px 0",
+          fontWeight:l.forte?700:400,textAlign:"left"};
+        // Linha sem itens por trás não vira botão: um clique que não abre nada
+        // é pior do que não ter clique.
+        return l.onClick
+          ?<button key={l.rot} className="gf-btn" onClick={l.onClick}
+             style={{...base,background:"transparent",border:"none",cursor:"pointer",
+               borderRadius:5}}>{conteudo}</button>
+          :<div key={l.rot} style={base}>{conteudo}</div>;
+      })}
     </div>
   );
 }
@@ -1729,10 +1739,13 @@ export default function App(){
     // sem recalcular nada.
     const fixas={},variaveis={},cartaoPor={},investPor={};
 
-    const contasList=[],invList=[];
+    const contasList=[],invList=[],rendaList=[];
     contas.forEach(r=>{
       const v=parseBRL(r.valor);
-      if(r.tipo==="RENDA"){ratear(renda,{dono:r.dono||DIVIDIDO,valor:v});return;}
+      if(r.tipo==="RENDA"){
+        const linha={...r,valor:v,dono:r.dono||DIVIDIDO,secao:"RENDA"};
+        rendaList.push(linha); ratear(renda,linha); return;
+      }
       if(r.tipo==="INVESTIMENTO"){invList.push({...r,valor:v,secao:"INV"});return;}
       contasList.push({...r,valor:v,secao:"CONTA",fixa:r.tipo==="DESPESA FIXA"});
     });
@@ -1754,12 +1767,14 @@ export default function App(){
     // conta. Contamos para avisar — antes, sumia em silêncio e o checklist
     // fechava com um valor menor do que a fatura, sem explicação.
     const semDono=allCartao.filter(r=>r.valor&&!r.dono);
+    const cartaoList=[];
     allCartao.forEach(r=>{
       if(!r.valor||!r.dono)return;
       const nome=r.cartao||"Outros";
       if(!cartoesMap[nome])cartoesMap[nome]={fixos:[],parcelados:[],variaveis:[]};
       const sub=r.parcelas==="RECORRENTE"?"fixos":r.parcelas==="PARCELADO"?"parcelados":"variaveis";
       cartoesMap[nome][sub].push(r);
+      cartaoList.push({...r,secao:"CARTAO"});
       ratear(desp,r);
       ratear(cartaoPor,r);
       if(estaPago("CARTAO",r)) ratear(pagoPor,r);
@@ -1796,7 +1811,7 @@ export default function App(){
       rendaCaulin:renda.Caulin||0, rendaLuanna:renda.Luanna||0,
       despCaulin:desp.Caulin||0,   despLuanna:desp.Luanna||0,
       saldoCaulin:saldoDe("Caulin"),saldoLuanna:saldoDe("Luanna"),
-      contasList,invList,totalFaturaCartoes,semDono,
+      contasList,invList,rendaList,cartaoList,totalFaturaCartoes,semDono,
       valorSemDono:semDono.reduce((a,r)=>a+r.valor,0),
       aReceber,totalAReceber:aReceber.reduce((a,x)=>a+x.total,0),
     };
@@ -2169,8 +2184,17 @@ export default function App(){
         {/* CHECKLIST */}
         {tab===4&&(()=>{
           const{renda,fixas,variaveis,cartao,investimentos,saldo,
-            contasList,invList,totalFaturaCartoes,semDono,valorSemDono,
+            contasList,invList,rendaList,cartaoList,totalFaturaCartoes,semDono,valorSemDono,
             aReceber,totalAReceber}=calcChecklist();
+
+          // Contas já vêm separadas por tipo; só faltava fatiar para os modais.
+          const listaFixas=contasList.filter(r=>r.fixa);
+          const listaVariaveis=contasList.filter(r=>!r.fixa);
+          const todosItens=[...contasList,...invList,...cartaoList];
+          const pagosDe=pessoa=>todosItens.filter(r=>
+            estaPago(r.secao,r)&&vPessoa(r.valor,r.dono,pessoa)>0);
+          /** Abre o detalhamento. Sem `pessoa`, mostra o valor cheio do casal. */
+          const abrir=(title,rows,pessoa)=>setModal({title,rows,pessoa});
 
           // `chave` em vez de `id`: os ids de contas/investimentos são
           // regenerados a cada carregamento, então o pago não sobreviveria.
@@ -2192,53 +2216,86 @@ export default function App(){
 
           return(
             <div>
-              {modal&&(
-                <Modal onClose={()=>setModal(null)}>
-                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
-                    <h3 style={{fontSize:14,fontWeight:600,margin:0,color:C.text}}>{modal.title}</h3>
-                    <button onClick={()=>setModal(null)} style={{background:"none",border:"none",cursor:"pointer",color:C.textMuted,fontSize:20}}>✕</button>
-                  </div>
-                  {modal.rows.map(r=>{
-                    const v=vPessoa(r.valor,r.dono,modal.pessoa);
-                    return(
-                      <div key={r.id} style={{display:"flex",justifyContent:"space-between",fontSize:13,padding:"8px 0",borderTop:`1px solid ${C.borderSoft}`}}>
-                        <span style={{flex:1,color:C.text}}>{r.nome||r.transacao}{r.parcela?" "+r.parcela:""}{r.obs&&<span style={{color:C.textMuted,marginLeft:6}}>— {r.obs}</span>}</span>
-                        <span style={{fontWeight:600,marginLeft:12,color:C.text,fontVariantNumeric:"tabular-nums"}}>{fmtBRL(v)}</span>
+              {modal&&(()=>{
+                // Sem `pessoa`, o modal é a visão do casal: mostra o valor
+                // cheio e de quem é. Com `pessoa`, mostra só a parte dela.
+                const parte=r=>modal.pessoa?vPessoa(r.valor,r.dono,modal.pessoa):r.valor;
+                const linhas=[...modal.rows].sort((a,b)=>parte(b)-parte(a));
+                return(
+                  <Modal onClose={()=>setModal(null)} wide>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
+                      <h3 style={{fontSize:14,fontWeight:600,margin:0,color:C.text}}>{modal.title}</h3>
+                      <button onClick={()=>setModal(null)} style={{background:"none",border:"none",cursor:"pointer",color:C.textMuted,fontSize:20}}>✕</button>
+                    </div>
+                    <p style={{fontSize:11,color:C.textMuted,margin:"0 0 12px"}}>
+                      {linhas.length} lançamento{linhas.length===1?"":"s"}
+                      {modal.pessoa
+                        ?` · valores já divididos, só a parte de ${modal.pessoa}`
+                        :" · valor cheio do lançamento"}
+                    </p>
+                    {linhas.length===0&&<EmptyState icon="🔍">Nada aqui neste mês.</EmptyState>}
+                    {linhas.map(r=>(
+                      <div key={r.id} style={{display:"flex",justifyContent:"space-between",gap:10,
+                        fontSize:13,padding:"8px 0",borderTop:`1px solid ${C.borderSoft}`}}>
+                        <span style={{flex:1,color:C.text,minWidth:0}}>
+                          {r.nome||r.transacao||r.descricao}
+                          {r.parcela?" "+r.parcela:""}
+                          {r.obs&&<span style={{color:C.textMuted,marginLeft:6}}>— {r.obs}</span>}
+                          {/* Sem pessoa fixada, quem paga é informação que falta. */}
+                          {!modal.pessoa&&r.dono&&(
+                            <span style={{color:C.textMuted,marginLeft:6,fontSize:11}}>
+                              · {rotuloDono(r.dono)}
+                            </span>
+                          )}
+                        </span>
+                        <span style={{fontWeight:600,color:C.text,whiteSpace:"nowrap",
+                          fontVariantNumeric:"tabular-nums"}}>{fmtBRL(parte(r))}</span>
                       </div>
-                    );
-                  })}
-                  <div style={{display:"flex",justifyContent:"space-between",fontSize:13,fontWeight:600,borderTop:`2px solid ${C.teal100}`,paddingTop:10,marginTop:6,color:C.teal600}}>
-                    <span>Total</span><span>{fmtBRL(modal.rows.reduce((a,r)=>a+vPessoa(r.valor,r.dono,modal.pessoa),0))}</span>
-                  </div>
-                </Modal>
-              )}
+                    ))}
+                    {linhas.length>0&&(
+                      <div style={{display:"flex",justifyContent:"space-between",fontSize:13,
+                        fontWeight:700,borderTop:`2px solid ${C.teal100}`,paddingTop:10,
+                        marginTop:6,color:C.teal600}}>
+                        <span>Total</span>
+                        <span style={{fontVariantNumeric:"tabular-nums"}}>
+                          {fmtBRL(linhas.reduce((a,r)=>a+parte(r),0))}
+                        </span>
+                      </div>
+                    )}
+                  </Modal>
+                );
+              })()}
 
               {/* ── Cards ──────────────────────────────────────────────────
                   Três leituras, da mais geral para a mais específica: o mês
-                  inteiro, cada pessoa, e o que é cartão/cobrança. */}
+                  inteiro, cada pessoa, e o que é cartão/cobrança.
+                  Toda linha de detalhe abre a lista por trás do número. */}
 
               <div style={{display:"grid",
                 gridTemplateColumns:isMobile?"1fr":"repeat(3,1fr)",gap:10,marginBottom:10}}>
                 <MetricCard label="Renda total" value={fmtBRL(renda.total)} accent="teal" icon="💰">
-                  <DetalheCard cor={C.teal600} linhas={[
-                    {rot:"Caulin",valor:renda.Caulin,sempre:true},
-                    {rot:"Luanna",valor:renda.Luanna,sempre:true},
-                  ]}/>
+                  <DetalheCard cor={C.teal600} linhas={CASAL.map(p=>({
+                    rot:p,valor:renda[p],sempre:true,
+                    onClick:()=>abrir(`Renda de ${p}`,rendaList,p),
+                  }))}/>
                 </MetricCard>
 
                 <MetricCard label="Despesas totais" value={fmtBRL(fixas.total+variaveis.total+cartao.total)} accent="red" icon="📉">
                   <DetalheCard cor={C.red600} linhas={[
-                    {rot:"Fixas",valor:fixas.total,sempre:true},
-                    {rot:"Despesas",valor:variaveis.total,sempre:true},
-                    {rot:"Cartão de crédito",valor:cartao.total,sempre:true},
+                    {rot:"Fixas",valor:fixas.total,sempre:true,
+                     onClick:()=>abrir("Despesas fixas do mês",listaFixas)},
+                    {rot:"Despesas",valor:variaveis.total,sempre:true,
+                     onClick:()=>abrir("Despesas do mês",listaVariaveis)},
+                    {rot:"Cartão de crédito",valor:cartao.total,sempre:true,
+                     onClick:()=>abrir("Cartão de crédito do mês",cartaoList)},
                   ]}/>
                 </MetricCard>
 
                 <MetricCard label="Investimentos" value={fmtBRL(investimentos.total)} accent="green" icon="📈">
-                  <DetalheCard cor={C.green600} linhas={[
-                    {rot:"Caulin",valor:investimentos.Caulin,sempre:true},
-                    {rot:"Luanna",valor:investimentos.Luanna,sempre:true},
-                  ]}/>
+                  <DetalheCard cor={C.green600} linhas={CASAL.map(p=>({
+                    rot:p,valor:investimentos[p],sempre:true,
+                    onClick:()=>abrir(`Investimentos de ${p}`,invList,p),
+                  }))}/>
                 </MetricCard>
               </div>
 
@@ -2252,19 +2309,26 @@ export default function App(){
                     <MetricCard key={pessoa} label={`Despesas ${pessoa}`} value={fmtBRL(total)}
                       accent={pessoa==="Caulin"?"teal":"purple"} icon="🧾">
                       <DetalheCard cor={cor} linhas={[
-                        {rot:"Fixas",valor:fixas[pessoa],sempre:true},
-                        {rot:"Despesas",valor:variaveis[pessoa],sempre:true},
-                        {rot:"CC",valor:cartao[pessoa],sempre:true},
+                        {rot:"Fixas",valor:fixas[pessoa],sempre:true,
+                         onClick:()=>abrir(`Fixas — ${pessoa}`,listaFixas,pessoa)},
+                        {rot:"Despesas",valor:variaveis[pessoa],sempre:true,
+                         onClick:()=>abrir(`Despesas — ${pessoa}`,listaVariaveis,pessoa)},
+                        {rot:"CC",valor:cartao[pessoa],sempre:true,
+                         onClick:()=>abrir(`Cartão — ${pessoa}`,cartaoList,pessoa)},
                       ]}/>
                       {/* Saldo destacado: é a única linha que muda ao marcar
-                          pago, e é o número que se olha no fim do mês. */}
-                      <div style={{display:"flex",justifyContent:"space-between",gap:8,
-                        marginTop:8,paddingTop:8,borderTop:`1px solid ${cor}33`,
-                        fontSize:12,fontWeight:700,
-                        color:sld>=0?C.green600:C.red600}}>
-                        <span>Saldo</span>
+                          pago, e é o número que se olha no fim do mês. Clicar
+                          mostra o que já foi pago, que é o que o derruba. */}
+                      <button className="gf-btn"
+                        onClick={()=>abrir(`Já pago — ${pessoa}`,pagosDe(pessoa),pessoa)}
+                        style={{display:"flex",justifyContent:"space-between",gap:8,width:"100%",
+                          marginTop:8,paddingTop:8,borderTop:`1px solid ${cor}33`,
+                          border:"none",borderRadius:5,background:"transparent",cursor:"pointer",
+                          fontSize:12,fontWeight:700,textAlign:"left",
+                          color:sld>=0?C.green600:C.red600}}>
+                        <span>Saldo <span style={{opacity:0.55}}>›</span></span>
                         <span style={{fontVariantNumeric:"tabular-nums"}}>{fmtBRL(sld)}</span>
-                      </div>
+                      </button>
                     </MetricCard>
                   );
                 })}
@@ -2273,35 +2337,41 @@ export default function App(){
               <div style={{display:"grid",
                 gridTemplateColumns:isMobile?"1fr":"repeat(auto-fit,minmax(200px,1fr))",
                 gap:10,marginBottom:20}}>
-                {totalFaturaCartoes.map(({nome,total,pagos})=>{
+                {totalFaturaCartoes.map(({nome,total,pagos,fixos,parcelados,variaveis:vars})=>{
                   const pct=total>0?Math.round((pagos/total)*100):0;
+                  const somar=rows=>rows.reduce((a,r)=>a+r.valor,0);
                   return(
                     <MetricCard key={nome} label={nome} value={fmtBRL(total)} accent="blue" icon="💳">
                       <div style={{margin:"10px 0 4px"}}><ProgressBar pct={pct} color={C.blue600}/></div>
                       <div style={{fontSize:10,color:C.blue600,opacity:0.7}}>{pct}% pago</div>
+                      <DetalheCard cor={C.blue600} linhas={[
+                        {rot:"Fixos",valor:somar(fixos),
+                         onClick:()=>abrir(`${nome} — Fixos`,fixos)},
+                        {rot:"Parcelados",valor:somar(parcelados),
+                         onClick:()=>abrir(`${nome} — Parcelados`,parcelados)},
+                        {rot:"Variáveis",valor:somar(vars),
+                         onClick:()=>abrir(`${nome} — Variáveis`,vars)},
+                      ]}/>
                     </MetricCard>
                   );
                 })}
 
                 {!checklistEmAberto&&totalEmAberto>0&&(
                   <MetricCard label="Fatura em aberto" value={fmtBRL(totalEmAberto)}
-                    sub="ainda não fechou — fora do cálculo" accent="amber" icon="🔴"/>
+                    sub="ainda não fechou — fora do cálculo" accent="amber" icon="🔴">
+                    <DetalheCard cor={C.amber600} linhas={[
+                      {rot:"Ver lançamentos",valor:totalEmAberto,sempre:true,
+                       onClick:()=>abrir(`Fatura em aberto — ${mesLabel(mesRef)}`,ofAbertaChecklist)},
+                    ]}/>
+                  </MetricCard>
                 )}
 
                 {aReceber.length>0&&(
                   <MetricCard label="A receber" value={fmtBRL(totalAReceber)} accent="blue" icon="💰">
-                    <div style={{marginTop:10,paddingTop:8,borderTop:`1px solid ${C.blue600}22`}}>
-                      {aReceber.map(p=>(
-                        <button key={p.nome} className="gf-btn"
-                          onClick={()=>setModal({title:`A receber — ${p.nome}`,rows:p.itens,pessoa:p.nome})}
-                          style={{display:"flex",width:"100%",justifyContent:"space-between",
-                            gap:8,padding:"3px 0",background:"transparent",border:"none",
-                            cursor:"pointer",fontSize:11,color:C.blue600,opacity:0.8}}>
-                          <span>{p.nome} ›</span>
-                          <span style={{fontVariantNumeric:"tabular-nums"}}>{fmtBRL(p.total)}</span>
-                        </button>
-                      ))}
-                    </div>
+                    <DetalheCard cor={C.blue600} linhas={aReceber.map(p=>({
+                      rot:p.nome,valor:p.total,sempre:true,
+                      onClick:()=>abrir(`A receber — ${p.nome}`,p.itens,p.nome),
+                    }))}/>
                   </MetricCard>
                 )}
               </div>
