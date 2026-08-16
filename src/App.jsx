@@ -501,8 +501,14 @@ function tempoRelativo(iso){
   return `há ${Math.round(h/24)}d`;
 }
 
+/** Idade em horas, ou null se a data não der para ler. */
+function horasDesde(iso){
+  const t=new Date(iso).getTime();
+  return isNaN(t)?null:(Date.now()-t)/3600000;
+}
+
 /** Faixa de status do Open Finance: frescor do dado e conciliação com o banco. */
-function BarraOpenFinance({temOF,ultimoSync,erroSync,conciliacao,pedindoSync,onAtualizar,onCartoes,isMobile}){
+function BarraOpenFinance({temOF,ultimoSync,pluggyEm,erroSync,conciliacao,pedindoSync,onAtualizar,onCartoes,isMobile}){
   if(!temOF) return(
     <div style={{...card,borderColor:C.amber100,background:C.amberSoft}}>
       <div style={{fontSize:13,color:C.amber600,fontWeight:600,marginBottom:4}}>Open Finance não configurado</div>
@@ -512,13 +518,29 @@ function BarraOpenFinance({temOF,ultimoSync,erroSync,conciliacao,pedindoSync,onA
     </div>
   );
   const divergentes=conciliacao.filter(c=>Math.abs(c.dif)>=0.01);
+  // Duas idades diferentes, e confundi-las já custou tempo: `ultimoSync` é
+  // quando NÓS lemos o Pluggy; `pluggyEm` é quando o PLUGGY leu o banco. É a
+  // segunda que limita o que dá para ver — sincronizar não faz o Pluggy ir ao
+  // banco. Acima de 24h, o dado do banco está velho e a fatura vai divergir.
+  const hSync=horasDesde(ultimoSync);
+  const hBanco=horasDesde(pluggyEm);
+  const syncVelho=hSync!==null&&hSync>=48;
+  const bancoVelho=hBanco!==null&&hBanco>=24;
   return(
     <div style={{...card,padding:"0.85rem 1rem"}}>
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,flexWrap:"wrap"}}>
         <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-          <span style={{fontSize:11,color:C.textMuted}}>
-            {ultimoSync?`Atualizado ${tempoRelativo(ultimoSync)}`:"Nunca sincronizado"}
+          <span style={{fontSize:11,color:syncVelho?C.amber600:C.textMuted,
+            fontWeight:syncVelho?600:400}}>
+            {ultimoSync?`Sincronizado ${tempoRelativo(ultimoSync)}`:"Nunca sincronizado"}
           </span>
+          {pluggyEm&&(
+            <span style={{fontSize:11,color:bancoVelho?C.amber600:C.textMuted,
+              fontWeight:bancoVelho?600:400}}
+              title="Quando o Pluggy foi ao banco. Sincronizar relê o Pluggy, não o banco.">
+              · banco lido {tempoRelativo(pluggyEm)}
+            </span>
+          )}
           {conciliacao.length>0&&(divergentes.length===0
             ?<Badge>confere com o banco</Badge>
             :<Badge color="new">{divergentes.length} cartão(ões) divergindo</Badge>)}
@@ -534,6 +556,15 @@ function BarraOpenFinance({temOF,ultimoSync,erroSync,conciliacao,pedindoSync,onA
       {erroSync&&(
         <div style={{marginTop:10,fontSize:12,color:C.red600,background:C.red50,border:`1px solid ${C.red100}`,padding:"8px 10px",borderRadius:8}}>
           ⚠️ {erroSync}
+        </div>
+      )}
+
+      {bancoVelho&&(
+        <div style={{marginTop:10,fontSize:12,color:C.amber600,background:C.amberSoft,border:`1px solid ${C.amber100}`,padding:"8px 10px",borderRadius:8,lineHeight:1.6}}>
+          <strong>O Pluggy não vai ao banco desde {tempoRelativo(pluggyEm)}.</strong>{" "}
+          Compras mais recentes que isso ainda não existem aqui — e o botão
+          Atualizar não resolve, ele só relê o Pluggy. Para forçar, rode{" "}
+          <code>atualizarDoBancoESincronizar()</code> no Apps Script.
         </div>
       )}
 
@@ -1171,6 +1202,8 @@ export default function App(){
   }).filter(c=>c.banco!==null);
 
   const ultimoSync=ofStatus["ultimo_sync"]||"";
+  // Quando o Pluggy foi ao banco — diferente de quando nós lemos o Pluggy.
+  const pluggyEm=ofStatus["pluggy_atualizado_em"]||"";
   const erroSync=ofStatus["ultimo_erro"]||"";
 
   // Linhas legadas (importadas por CSV antes do Open Finance) entram na aba
@@ -1456,7 +1489,7 @@ export default function App(){
         {tab===0&&(
           <div>
             <BarraOpenFinance
-              temOF={temOF} ultimoSync={ultimoSync} erroSync={erroSync}
+              temOF={temOF} ultimoSync={ultimoSync} pluggyEm={pluggyEm} erroSync={erroSync}
               conciliacao={conciliacao} pedindoSync={pedindoSync}
               onAtualizar={pedirSync} onCartoes={()=>setShowCartoes(true)}
               isMobile={isMobile}/>

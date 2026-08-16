@@ -323,6 +323,60 @@ function sincronizarAgora() {
   return sincronizar('manual');
 }
 
+/**
+ * Força o Pluggy a ir ao banco e só depois sincroniza.
+ *
+ * Use quando faltar transação recente: `sincronizarAgora()` sozinho relê o
+ * cache do Pluggy, então uma compra que o Pluggy ainda não viu não aparece.
+ *
+ * O PATCH é assíncrono. Esperamos o item sair de UPDATING por até ~2 min; se
+ * demorar mais, o sync roda com o que houver e basta rodar de novo depois.
+ */
+function atualizarDoBancoESincronizar() {
+  var log = [];
+  function p(s) { log.push(s); Logger.log(s); }
+
+  var items = pluggyItems();
+  p('Pedindo atualização de ' + items.ids.length + ' item(s) no Pluggy...');
+
+  items.ids.forEach(function (itemId) {
+    var r = pluggyAtualizarItem(itemId);
+    if (!r.ok) {
+      p('  ⚠️ ' + itemId + ': HTTP ' + r.code + ' — ' +
+        (r.body && r.body.message ? r.body.message : 'sem detalhe'));
+      return;
+    }
+    p('  ' + itemId + ': ' + (r.body.status || '?') + ' (antes: ' + (r.body.lastUpdatedAt || '?') + ')');
+  });
+
+  // Espera terminar. 24 × 5s = 2 min de teto.
+  var pendentes = items.ids.slice();
+  for (var tentativa = 0; tentativa < 24 && pendentes.length; tentativa++) {
+    Utilities.sleep(5000);
+    pendentes = pendentes.filter(function (itemId) {
+      var info = pluggyItem(itemId);
+      var st = info.ok && info.body ? info.body.status : '?';
+      if (st === 'UPDATING' || st === 'CREATING') return true;
+      if (st === 'WAITING_USER_INPUT') {
+        p('  ⏸️ ' + itemId + ': o banco pediu autenticação. Resolva em meu.pluggy.ai.');
+      }
+      return false;
+    });
+  }
+  if (pendentes.length) {
+    p('⏳ ' + pendentes.length + ' item(s) ainda atualizando. Sincronizando com o que houver;');
+    p('   rode sincronizarAgora() daqui a pouco para pegar o resto.');
+  } else {
+    p('✅ Pluggy terminou de atualizar.');
+  }
+
+  p('');
+  p('Sincronizando para a planilha...');
+  sincronizar('manual-forcado');
+  p('Pronto. Confira com conferirFatura().');
+  return log.join('\n');
+}
+
 function sincronizar(motivo) {
   // Trava: o gatilho diário e o poller de 5 min não podem rodar juntos,
   // senão os dois reescrevem OF_TRANSACOES ao mesmo tempo.
@@ -343,11 +397,24 @@ function sincronizar(motivo) {
     var items = pluggyItems();
     var cartoes = [], transacoes = [], accountIds = [], avisos = [], faturasOut = [];
 
+    var maisAntigoNoPluggy = null;
+
     items.ids.forEach(function (itemId) {
       var info = pluggyItem(itemId);
       var st = info.ok && info.body ? info.body.status : 'ERRO_HTTP_' + info.code;
       var conector = info.ok && info.body && info.body.connector ? info.body.connector.name : itemId;
       statusGravar_um('item_' + itemId + '_status', st + ' — ' + conector);
+
+      // QUANDO O PLUGGY LEU O BANCO — não é o mesmo que quando NÓS lemos o
+      // Pluggy. `sincronizarAgora()` só relê o que o Pluggy já tem em cache;
+      // se o Pluggy não foi ao banco hoje, uma compra de ontem não existe para
+      // nós por mais que a gente sincronize. Sem esse dado gravado, a diferença
+      // era invisível e parecia bug do app.
+      var lu = info.ok && info.body ? info.body.lastUpdatedAt : null;
+      if (lu) {
+        statusGravar_um('item_' + itemId + '_pluggy_em', lu);
+        if (!maisAntigoNoPluggy || String(lu) < String(maisAntigoNoPluggy)) maisAntigoNoPluggy = lu;
+      }
 
       if (st === 'LOGIN_ERROR' || st === 'OUTDATED') {
         avisos.push(conector + ': ' + st + ' (renove a conexão em meu.pluggy.ai)');
@@ -408,6 +475,8 @@ function sincronizar(motivo) {
       ultimo_sync_motivo: motivo,
       ultimo_sync_resumo: cartoes.length + ' cartões · ' + res.gravadas + ' transações · ' +
                           segundos + 's · janela ' + dataDe + ' a ' + dataAte,
+      // O mais desatualizado entre os items: é o que limita o que o app mostra.
+      pluggy_atualizado_em: maisAntigoNoPluggy || '',
       ultimo_erro: avisos.length ? avisos.join(' | ') : ''
     });
 

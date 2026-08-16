@@ -35,6 +35,7 @@ const sandbox = {
   SpreadsheetApp: { getActive: () => { throw new Error('planilha não deve ser tocada no QA'); } },
   LockService: { getScriptLock: () => ({ tryLock: () => true, releaseLock: () => {} }) },
   ScriptApp: { getProjectTriggers: () => [], newTrigger: () => { throw new Error('no-op'); } },
+  Utilities: { sleep: () => {} },
 };
 vm.createContext(sandbox);
 try {

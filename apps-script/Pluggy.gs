@@ -71,6 +71,33 @@ function pluggyGet(caminho, params) {
 }
 
 /**
+ * Pede ao Pluggy que vá AO BANCO buscar dados novos.
+ *
+ * Distinção que importa: `sincronizarAgora()` lê o que o Pluggy já tem
+ * guardado. Se o Pluggy não visitou o banco desde ontem, uma compra de hoje
+ * não existe para nós por mais que a gente sincronize. Este PATCH é o que
+ * dispara a visita.
+ *
+ * Não é instantâneo — o item entra em UPDATING e leva de segundos a alguns
+ * minutos. Conector com MFA pode parar em WAITING_USER_INPUT e exigir ação no
+ * meu.pluggy.ai. Por isso fica como função manual, e não dentro do sync
+ * automático: forçar isso todo dia sem necessidade só gasta a conexão.
+ */
+function pluggyAtualizarItem(itemId) {
+  var resp = UrlFetchApp.fetch(PLUGGY_API + '/items/' + itemId, {
+    method: 'patch',
+    contentType: 'application/json',
+    payload: '{}',
+    headers: { 'X-API-KEY': pluggyApiKey() },
+    muteHttpExceptions: true
+  });
+  var code = resp.getResponseCode();
+  var body = null;
+  try { body = JSON.parse(resp.getContentText()); } catch (e) { body = { raw: resp.getContentText() }; }
+  return { ok: code >= 200 && code < 300, code: code, body: body };
+}
+
+/**
  * Items (conexões bancárias) a sincronizar.
  *
  * A API do Pluggy NÃO expõe listagem de items — só `GET /items/{id}`. Por isso
