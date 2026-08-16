@@ -89,9 +89,9 @@ function pluggyGet(caminho, params) {
  * Caminho manual enquanto isso: https://meu.pluggy.ai/connections/<itemId> →
  * botão Atualizar, e depois sincronizarAgora() aqui.
  *
- * Em aberto: POST /connect_tokens + widget do Pluggy Connect em modo update
- * poderia embutir esse fluxo no app. Não testado — provavelmente esbarra na
- * mesma fronteira de aplicação, já que o token sairia da nossa clientId.
+ * Embutir o widget do Pluggy Connect no app não escapa disso: modo update
+ * exige itemId no connect_token, e itemId de outra aplicação devolve 404.
+ * Mesma fronteira. Ver testarWidgetUpdate() em Diagnostico.gs.
  *
  * A função fica porque conector fora do Meu Pluggy aceita: aí o item entra em
  * UPDATING e leva de segundos a minutos. Manual de propósito — forçar todo dia
@@ -105,6 +105,36 @@ function pluggyAtualizarItem(itemId) {
     headers: { 'X-API-KEY': pluggyApiKey() },
     muteHttpExceptions: true
   });
+  var code = resp.getResponseCode();
+  var body = null;
+  try { body = JSON.parse(resp.getContentText()); } catch (e) { body = { raw: resp.getContentText() }; }
+  return { ok: code >= 200 && code < 300, code: code, body: body };
+}
+
+/**
+ * Emite um connect_token — a credencial de curta duração que o widget do
+ * Pluggy Connect consome no browser. É o que permitiria embutir a atualização
+ * no app sem expor clientId/clientSecret no bundle.
+ *
+ * Com `itemId`, o widget abre em modo update (atualiza a conexão existente).
+ * Sem `itemId`, abre em modo create (conecta um banco novo).
+ *
+ * ⚠️ A doc é explícita: itemId que não pertence à aplicação que pede devolve
+ * 404 ITEM_NOT_FOUND. Como o nosso item é do Meu Pluggy, é o resultado
+ * esperado aqui. testarWidgetUpdate() confirma na prática.
+ */
+function pluggyConnectToken(itemId) {
+  var payload = {};
+  if (itemId) payload.itemId = itemId;
+
+  var resp = UrlFetchApp.fetch(PLUGGY_API + '/connect_tokens', {
+    method: 'post',
+    contentType: 'application/json',
+    payload: JSON.stringify(payload),
+    headers: { 'X-API-KEY': pluggyApiKey() },
+    muteHttpExceptions: true
+  });
+
   var code = resp.getResponseCode();
   var body = null;
   try { body = JSON.parse(resp.getContentText()); } catch (e) { body = { raw: resp.getContentText() }; }

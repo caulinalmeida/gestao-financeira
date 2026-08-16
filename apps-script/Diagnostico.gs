@@ -204,6 +204,82 @@ function diagnosticoOpenFinance() {
 }
 
 /**
+ * Dá para embutir o widget do Pluggy Connect no app e atualizar por lá?
+ *
+ * A pergunta tem duas metades independentes:
+ *
+ *   a) MINTAR O TOKEN — o widget precisa de um connect_token, e emitir um
+ *      exige clientId/clientSecret. O app é estático e público, então o
+ *      segredo não pode ir para o bundle. Contornável: o Apps Script emite
+ *      (é o que esta função faz) e devolve pela planilha, como o pedido_sync.
+ *
+ *   b) O ITEM SER NOSSO — modo update exige `itemId` no token, e a doc diz
+ *      que itemId de outra aplicação devolve 404 ITEM_NOT_FOUND. O nosso é do
+ *      Meu Pluggy (clientUserId: my-pluggy:<email>), a mesma fronteira que já
+ *      derruba o PATCH com 400 "MeuPluggy item cant be updated".
+ *
+ * (a) é trabalho; (b) é permissão. Esta função testa (b), que é a que decide.
+ * Um 404/403 aqui encerra o assunto: o widget embutido não é caminho enquanto
+ * a conexão viver no Meu Pluggy.
+ *
+ * Não escreve nada. connect_token é de leitura curta e some sozinho.
+ */
+function testarWidgetUpdate() {
+  var log = [];
+  function p(s) { log.push(s); Logger.log(s); }
+
+  p('=== O WIDGET DO PLUGGY CONNECT CABE NO APP? ===');
+  p('');
+
+  // Modo create primeiro: separa "não sabemos emitir token" de "não podemos
+  // tocar NESTE item". Sem isso, um 404 no update seria ambíguo.
+  var criar = pluggyConnectToken(null);
+  p('1) Emitir connect_token (modo create, sem itemId)');
+  p('   HTTP ' + criar.code + (criar.ok ? ' ✅' : ' ❌'));
+  if (criar.ok) {
+    p('   → Sabemos emitir token. O widget rodaria; o segredo fica aqui no');
+    p('     Apps Script, nunca no bundle.');
+  } else {
+    p('   → ' + JSON.stringify(criar.body).slice(0, 300));
+    p('   → Sem isto, nem modo create funciona. Confira as credenciais.');
+  }
+
+  var items = pluggyItems();
+  items.ids.forEach(function (itemId) {
+    p('');
+    p('2) Emitir connect_token em modo UPDATE para ' + itemId);
+    var up = pluggyConnectToken(itemId);
+    p('   HTTP ' + up.code + (up.ok ? ' ✅' : ' ❌'));
+    p('   ' + JSON.stringify(up.body).slice(0, 300));
+
+    if (up.ok) {
+      p('');
+      p('   🎉 INESPERADO — e ótimo. O token saiu, então o widget PODE abrir');
+      p('      em modo update para este item. Vale construir: app pede token');
+      p('      pela planilha, Apps Script emite, widget abre, o usuário');
+      p('      atualiza sem sair do app.');
+    } else if (up.code === 404) {
+      p('');
+      p('   ⛔ 404 ITEM_NOT_FOUND — confirma o esperado: para efeito de');
+      p('      escrita, este item não existe para a nossa aplicação. Ele é do');
+      p('      Meu Pluggy. Widget embutido está fora enquanto for assim.');
+      p('      O caminho segue sendo o botão em meu.pluggy.ai e depois 🔄.');
+    } else {
+      p('');
+      p('   ⛔ Recusado (HTTP ' + up.code + '). Mesma conclusão prática do 404.');
+    }
+  });
+
+  p('');
+  p('Obs.: reconectar o Itaú sob a NOSSA aplicação resolveria tudo (aí o item');
+  p('seria nosso e o PATCH bastaria, sem widget). Mas sai do Meu Pluggy, que');
+  p('é o tier gratuito — o plano pago do Pluggy começa na casa dos milhares');
+  p('de reais por mês. Para um app doméstico, não fecha.');
+
+  return log.join('\n');
+}
+
+/**
  * A cadência observada. Só faz sentido depois de alguns dias de registro —
  * é a diferença entre "acho que atualiza de manhã" e saber a que horas.
  */

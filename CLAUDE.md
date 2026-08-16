@@ -102,7 +102,14 @@ mostra a que horas o Pluggy realmente visita — aí dá para alinhar o gatilho.
 >
 > **Caminho manual:** `https://meu.pluggy.ai/connections/<itemId>` → botão **Atualizar** → voltar ao app e clicar 🔄. O app monta esse link sozinho na faixa de aviso quando o dado passa de 24h.
 >
-> **Em aberto:** `POST /connect_tokens` + widget do Pluggy Connect em modo update poderia embutir o fluxo no app. Não testado; provavelmente esbarra na mesma fronteira de aplicação.
+> **Widget do Pluggy Connect embutido no app: descartado.** A ideia era `POST /connect_tokens` + widget em modo update, para atualizar sem sair do app. Esbarra em duas coisas, e a segunda é fatal:
+>
+> 1. Emitir o token exige `clientId`/`clientSecret`, que não podem ir para o bundle público. Contornável — o Apps Script emitiria e devolveria pela planilha, como o `pedido_sync`. É trabalho, não impedimento.
+> 2. Modo update exige `itemId` no token, e a [doc do endpoint](https://docs.pluggy.ai/reference/connect-token-create) diz que `itemId` de outra aplicação devolve **404 `ITEM_NOT_FOUND`**. O nosso item é do Meu Pluggy — a mesma fronteira que já derruba o PATCH. É permissão, e não temos como contornar.
+>
+> `testarWidgetUpdate()` (em `Diagnostico.gs`) confirma na prática: emite um token em modo create (deve passar) e um em modo update (deve dar 404). Rodar de novo se o Pluggy mudar as regras.
+>
+> **Reconectar o Itaú sob a nossa própria aplicação** resolveria de vez — o item seria nosso, o PATCH bastaria e o widget nem seria preciso. Mas sai do Meu Pluggy, que é o tier gratuito; o plano pago começa na casa dos milhares de reais/mês. Para um app doméstico, não fecha. É por isso que o caminho manual (`meu.pluggy.ai` → Atualizar → 🔄 no app) continua sendo o desenho certo, não uma gambiarra provisória.
 
 ### Como o Apps Script deriva o mês da transação
 
