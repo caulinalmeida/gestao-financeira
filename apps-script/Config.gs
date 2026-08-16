@@ -23,7 +23,12 @@ var ABA_AJUSTES    = 'OF_AJUSTES';
 // Janela de sincronização. Larga de propósito: parcelas futuras e transações
 // que passam de PENDING para POSTED aparecem fora dos últimos dias, e é isso
 // que nos permite dispensar webhook.
-var JANELA_DIAS_ATRAS = 120;
+// 210 e não 120: com 120, a janela começava no meio de abril e a fatura de
+// maio (que fecha 03/05 e cobre compras desde 03/04) nascia cortada — faltavam
+// R$ 3.622 só por causa da borda. Como o mês mais antigo da janela é SEMPRE
+// parcial, o jeito de ter meses fechados confiáveis é a janela alcançar mais
+// para trás do que os meses que se quer conferir.
+var JANELA_DIAS_ATRAS = 210;
 var JANELA_DIAS_FRENTE = 90;
 
 // Cabeçalhos. A ORDEM É CONTRATO — o App.jsx lê por posição de coluna.

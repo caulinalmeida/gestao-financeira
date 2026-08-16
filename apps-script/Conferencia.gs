@@ -79,7 +79,8 @@ function conferirFatura() {
     txs.forEach(function (t) {
       var d = _derivarMes(t, ctx.mapaFaturas, ctx.diaFech, ctx.diaVenc);
       if (!porMes[d.mes]) {
-        porMes[d.mes] = { n: 0, fatura: 0, pagto: 0, pend: 0, post: 0, bill: 0, ciclo: 0, fore: 0 };
+        porMes[d.mes] = { n: 0, fatura: 0, pagto: 0, pend: 0, post: 0,
+                          bill: 0, ciclo: 0, agend: 0, fore: 0 };
       }
       var m = porMes[d.mes], v = Number(t.amount || 0);
       m.n++;
@@ -87,6 +88,7 @@ function conferirFatura() {
       if (t.status === 'PENDING') m.pend++; else m.post++;
       if (d.origem === 'BILL') m.bill++;
       else if (d.origem === 'CICLO') m.ciclo++;
+      else if (d.origem === 'AGENDADA') m.agend++;
       else m.fore++;
     });
 
@@ -112,11 +114,12 @@ function conferirFatura() {
         _fmt(m.fatura).padStart(12) + '  ' +
         (temBanco ? _fmt(banco).padStart(12) : '           ?') + '  ' +
         (temBanco ? _fmt(dif).padStart(11) : '          -') + marca +
-        '   B' + m.bill + ' C' + m.ciclo + ' F' + m.fore);
+        '   B' + m.bill + ' C' + m.ciclo + ' A' + m.agend + ' F' + m.fore);
       if (m.pagto) p('              (pagamento recebido: ' + _fmt(m.pagto) + ' — fora do total)');
     });
     p('');
     p('     ✅ = bate com o banco · ⚠️ = divergente · — = fatura ainda não fechada');
+    p('     Regra: B=bill do banco · C=ciclo de fechamento · A=parcela agendada · F=palpite');
     p('     Meses na borda da janela ficam incompletos, é esperado.');
 
     // A virada de fatura é onde erro de mês aparece. Lista o entorno do
