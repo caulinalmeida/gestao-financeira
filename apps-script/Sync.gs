@@ -355,15 +355,31 @@ function atualizarDoBancoESincronizar() {
   var items = pluggyItems();
   p('Pedindo atualização de ' + items.ids.length + ' item(s) no Pluggy...');
 
+  var recusados = [];
   items.ids.forEach(function (itemId) {
     var r = pluggyAtualizarItem(itemId);
     if (!r.ok) {
-      p('  ⚠️ ' + itemId + ': HTTP ' + r.code + ' — ' +
-        (r.body && r.body.message ? r.body.message : 'sem detalhe'));
+      var msg = (r.body && r.body.message) ? r.body.message : 'sem detalhe';
+      p('  ⚠️ ' + itemId + ': HTTP ' + r.code + ' — ' + msg);
+      recusados.push(itemId);
       return;
     }
     p('  ' + itemId + ': ' + (r.body.status || '?') + ' (antes: ' + (r.body.lastUpdatedAt || '?') + ')');
   });
+
+  if (recusados.length) {
+    p('');
+    p('  ℹ️ Item do Meu Pluggy não aceita atualização por API — e não é limitação');
+    p('     nossa: forçar a atualização abre a tela de consentimento do próprio');
+    p('     banco, que exige alguém autenticando. Não dá para automatizar.');
+    p('');
+    p('     O caminho é manual, leva ~1 min:');
+    recusados.forEach(function (id) {
+      p('       https://meu.pluggy.ai/connections/' + id + '  → botão Atualizar');
+    });
+    p('');
+    p('     Depois volte aqui e rode sincronizarAgora() (ou clique 🔄 no app).');
+  }
 
   // Espera terminar. 24 × 5s = 2 min de teto.
   var pendentes = items.ids.slice();

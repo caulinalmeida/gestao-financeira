@@ -78,10 +78,15 @@ function pluggyGet(caminho, params) {
  * não existe para nós por mais que a gente sincronize. Este PATCH é o que
  * dispara a visita.
  *
- * Não é instantâneo — o item entra em UPDATING e leva de segundos a alguns
- * minutos. Conector com MFA pode parar em WAITING_USER_INPUT e exigir ação no
- * meu.pluggy.ai. Por isso fica como função manual, e não dentro do sync
- * automático: forçar isso todo dia sem necessidade só gasta a conexão.
+ * ⚠️ ITEM DO MEU PLUGGY RECUSA: devolve 400 "MeuPluggy item cant be updated".
+ * Não é bug — forçar a atualização abre a tela de consentimento do banco, que
+ * exige alguém autenticando. Nesses casos o único caminho é manual, em
+ * https://meu.pluggy.ai/connections/<itemId> → botão Atualizar (~1 min), e
+ * depois um sincronizarAgora() aqui.
+ *
+ * Mantida porque conector comum (fora do Meu Pluggy) aceita: aí o item entra
+ * em UPDATING e leva de segundos a minutos. Fica manual de propósito — forçar
+ * todo dia sem necessidade só gasta a conexão.
  */
 function pluggyAtualizarItem(itemId) {
   var resp = UrlFetchApp.fetch(PLUGGY_API + '/items/' + itemId, {

@@ -655,8 +655,18 @@ function horasDesde(iso){
   return isNaN(t)?null:(Date.now()-t)/3600000;
 }
 
+/**
+ * Link para a conexão no Meu Pluggy.
+ *
+ * É o único caminho para forçar o Pluggy a ir ao banco: o `PATCH /items` é
+ * recusado com "MeuPluggy item cant be updated" porque a atualização abre a
+ * tela de consentimento do próprio banco — precisa de gente autenticando, não
+ * dá para automatizar. Levar direto ao botão é o melhor que o app pode fazer.
+ */
+const linkMeuPluggy=itemId=>`https://meu.pluggy.ai/connections/${itemId}`;
+
 /** Faixa de status do Open Finance: frescor do dado e conciliação com o banco. */
-function BarraOpenFinance({temOF,ultimoSync,pluggyEm,erroSync,conciliacao,pedindoSync,onAtualizar,onCartoes,isMobile}){
+function BarraOpenFinance({temOF,ultimoSync,pluggyEm,erroSync,conciliacao,conexoes,pedindoSync,onAtualizar,onCartoes,isMobile}){
   if(!temOF) return(
     <div style={{...card,borderColor:C.amber100,background:C.amberSoft}}>
       <div style={{fontSize:13,color:C.amber600,fontWeight:600,marginBottom:4}}>Open Finance não configurado</div>
@@ -670,6 +680,7 @@ function BarraOpenFinance({temOF,ultimoSync,pluggyEm,erroSync,conciliacao,pedind
   // quando NÓS lemos o Pluggy; `pluggyEm` é quando o PLUGGY leu o banco. É a
   // segunda que limita o que dá para ver — sincronizar não faz o Pluggy ir ao
   // banco. Acima de 24h, o dado do banco está velho e a fatura vai divergir.
+  const itens=conexoes||[];
   const hSync=horasDesde(ultimoSync);
   const hBanco=horasDesde(pluggyEm);
   const syncVelho=hSync!==null&&hSync>=48;
@@ -708,11 +719,26 @@ function BarraOpenFinance({temOF,ultimoSync,pluggyEm,erroSync,conciliacao,pedind
       )}
 
       {bancoVelho&&(
-        <div style={{marginTop:10,fontSize:12,color:C.amber600,background:C.amberSoft,border:`1px solid ${C.amber100}`,padding:"8px 10px",borderRadius:8,lineHeight:1.6}}>
+        <div style={{marginTop:10,fontSize:12,color:C.amber600,background:C.amberSoft,border:`1px solid ${C.amber100}`,padding:"10px 12px",borderRadius:8,lineHeight:1.6}}>
           <strong>O Pluggy não vai ao banco desde {tempoRelativo(pluggyEm)}.</strong>{" "}
-          Compras mais recentes que isso ainda não existem aqui — e o botão
-          Atualizar não resolve, ele só relê o Pluggy. Para forçar, rode{" "}
-          <code>atualizarDoBancoESincronizar()</code> no Apps Script.
+          Compras mais recentes que isso ainda não existem aqui, e o 🔄 acima não
+          resolve — ele só relê o Pluggy.
+          <div style={{marginTop:8,display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
+            {itens.map(it=>(
+              <a key={it.itemId} href={linkMeuPluggy(it.itemId)} target="_blank" rel="noreferrer"
+                className="gf-btn"
+                style={{fontSize:11,padding:"6px 12px",borderRadius:8,fontWeight:700,
+                  textDecoration:"none",background:C.amber600,color:"#241A05",
+                  border:`1px solid ${C.amber600}`}}>
+                ↗ Atualizar {it.nome} no Meu Pluggy
+              </a>
+            ))}
+          </div>
+          <div style={{marginTop:8,opacity:0.85}}>
+            Lá tem o botão <strong>Atualizar</strong>. Abre a tela do próprio banco
+            e leva cerca de 1 min — por isso não dá para automatizar. Depois volte
+            aqui e clique em 🔄.
+          </div>
         </div>
       )}
 
@@ -1644,6 +1670,11 @@ export default function App(){
     };
   }).filter(c=>c.banco!==null);
 
+  // Uma conexão (item do Pluggy) pode ter vários cartões. Para o link de
+  // atualização, o que importa é o item — agrupa pelo primeiro cartão de cada.
+  const conexoes=[...new Map(ofCartoes.filter(c=>c.itemId)
+    .map(c=>[c.itemId,{itemId:c.itemId,nome:c.nome}])).values()];
+
   const ultimoSync=ofStatus["ultimo_sync"]||"";
   // Quando o Pluggy foi ao banco — diferente de quando nós lemos o Pluggy.
   const pluggyEm=ofStatus["pluggy_atualizado_em"]||"";
@@ -2011,6 +2042,7 @@ export default function App(){
           <div>
             <BarraOpenFinance
               temOF={temOF} ultimoSync={ultimoSync} pluggyEm={pluggyEm} erroSync={erroSync}
+              conexoes={conexoes}
               conciliacao={conciliacao} pedindoSync={pedindoSync}
               onAtualizar={pedirSync} onCartoes={()=>setShowCartoes(true)}
               isMobile={isMobile}/>
