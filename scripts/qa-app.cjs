@@ -49,7 +49,7 @@ const alvos = [
   'function semSufixoParcela(',
   'function participantes(', 'function valorDe(', 'function donoCanonico(',
   'function terceirosDe(', 'function chavePago(', 'function chaveGrupo(',
-  'function cmpValor(', 'function ordenarLinhas(', 'function chaveDataCurta(',
+  'function cmpValor(', 'function ordenarLinhas(', 'function chaveData(',
   'function mesFaturaDe(', 'function diaFechamentoPadrao(', 'function mesAtualKey(',
 ];
 const pedacos = [];
@@ -617,14 +617,36 @@ console.log('\n=== 14. ordenarLinhas (clique no cabeçalho) ===');
      nomes(OL(acento, { col: 'nome', dir: 'asc' }, { nome: r => r.nome })),
      ['Ana', 'Ática', 'Zebra']);
 
-  console.log('\n=== 14b. chaveDataCurta (o "dd/mm" digitado à mão) ===');
-  const CD = ctx.chaveDataCurta;
-  eq('inverte para ordenar', CD('05/09'), '09-05');
-  eq('completa um dígito', CD('5/9'), '09-05');
-  ok('02/10 vem depois de 10/09 (ordem lexicográfica ficaria errada)',
-     CD('02/10') > CD('10/09'));
+  console.log('\n=== 14b. chaveData (três formatos na mesma tabela) ===');
+  const CD = ctx.chaveData;
+  eq('ISO passa direto', CD('2026-08-16'), '2026-08-16');
+  eq('dd/mm/aaaa vira ISO', CD('16/08/2026'), '2026-08-16');
+  eq('dd/mm ganha prefixo sem ano', CD('05/09'), '0000-09-05');
+  eq('dd/mm com um dígito', CD('5/9'), '0000-09-05');
   eq('texto que não é data passa direto', CD('amanhã'), 'amanhã');
   eq('vazio é seguro', CD(''), '');
+
+  // Os três erros concretos que a ordenação por data cometia.
+  ok('02/10 vem depois de 10/09', CD('02/10') > CD('10/09'));
+  ok('ISO e dd/mm/aaaa do mesmo dia viram a MESMA chave',
+     CD('2026-08-16') === CD('16/08/2026'));
+  ok('dd/mm/aaaa de julho vem antes de ISO de agosto',
+     CD('03/07/2026') < CD('2026-08-01'));
+
+  // A tabela de fatura fechada mistura Open Finance (ISO) com legado (BR):
+  // era exatamente aqui que a ordem saía embaralhada.
+  // O dia do legado é ALTO (20) de propósito: com a chave crua, "20/07/2026"
+  // compara 20 contra 2026 e vai para o topo por acidente. Um fixture com dia
+  // baixo passaria mesmo com o bug — foi o que aconteceu na primeira versão
+  // deste teste.
+  const mista = [
+    { nome: 'of-agosto', data: '2026-08-16' },
+    { nome: 'legado-20-jul', data: '20/07/2026' },
+    { nome: 'of-03-jul', data: '2026-07-03' },
+  ];
+  eq('ordena certo mesmo com formatos misturados',
+     nomes(OL(mista, { col: 'Data', dir: 'asc' }, { Data: r => CD(r.data) })),
+     ['of-03-jul', 'legado-20-jul', 'of-agosto']);
 }
 
 // ── 15. Mês atual = fatura aberta, não o calendário ──────────────────────────

@@ -195,7 +195,13 @@ function contaToRow(mes,r){return[mes,r.data||"",r.transacao,String(parseBRL(r.v
 function rowToConta(row){return{id:uid(),transacao:row[2]||"",valor:String(parseBRL(row[3])),dono:row[4]||"Caulin",tipo:row[5]||"DESPESA",parcelas:row[6]||"",obs:row[7]||""};}
 // Coluna K = Origem ("MANUAL" | "LEGADO"). Aditiva: linhas antigas leem vazio = LEGADO.
 function faturaToRow(mes,r,origem){return[mes,r.data||"",r.nome,r.parcela||"",String(r.valor),r.dono,r.tipo||"DESPESA",r.parcelas||"VARIÁVEL",r.obs||"",r.cartao||"",origem||"LEGADO"];}
-function rowToFatura(row){return{id:uid(),data:row[1]||"",nome:row[2]||"",parcela:row[3]||"",valor:parseBRL(row[4]),dono:row[5]||"",tipo:row[6]||"DESPESA",parcelas:row[7]||"VARIÁVEL",obs:row[8]||"",cartao:row[9]||"",isNew:false};}
+// A data passa por parseDataFlex como a do Open Finance. Sem isso a linha
+// legada guardava o formato cru do Sheets ("03/07/2026") enquanto a do OF
+// guardava ISO — e a mesma tabela mostra as duas, então ordenar por data
+// comparava formatos diferentes como texto. Lançamento manual continua
+// aceitando "dd/mm" digitado à mão: parseDataFlex devolve intacto o que não
+// reconhece.
+function rowToFatura(row){return{id:uid(),data:parseDataFlex(row[1]),nome:row[2]||"",parcela:row[3]||"",valor:parseBRL(row[4]),dono:row[5]||"",tipo:row[6]||"DESPESA",parcelas:row[7]||"VARIÁVEL",obs:row[8]||"",cartao:row[9]||"",isNew:false};}
 function dictToRow(d){return[d.key,d.dono,d.parcelas,d.obs||""];}
 function rowToDict(row){return{key:row[0]||"",dono:row[1]||"Caulin",parcelas:row[2]||"VARIÁVEL",obs:row[3]||""};}
 
@@ -601,10 +607,22 @@ function ordenarLinhas(linhas,sort,acessores){
   }).map(x=>x.l);
 }
 
-/** "dd/mm" ordena errado como texto (02/10 antes de 10/09). Invertido, ordena. */
-function chaveDataCurta(v){
-  const m=String(v||"").match(/^(\d{1,2})\/(\d{1,2})$/);
-  return m?`${m[2].padStart(2,"0")}-${m[1].padStart(2,"0")}`:String(v||"");
+/**
+ * Chave de ordenação para qualquer data que apareça numa tabela.
+ *
+ * Três formatos convivem: ISO vindo do Open Finance, `dd/mm/aaaa` que o Sheets
+ * devolve quando interpretou a célula como data, e `dd/mm` que você digita no
+ * lançamento manual. Comparados como texto, os três se embaralham — "02/10"
+ * vinha antes de "10/09", e "16/08/2026" antes de "2026-08-16".
+ */
+function chaveData(v){
+  const s=parseDataFlex(v);                       // ISO e dd/mm/aaaa viram ISO
+  if(/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  const m=s.match(/^(\d{1,2})\/(\d{1,2})$/);
+  // "dd/mm" não tem ano. O prefixo 0000 ordena certo dentro do mês e mantém o
+  // grupo junto, em vez de intercalar com as datas completas.
+  if(m) return `0000-${m[2].padStart(2,"0")}-${m[1].padStart(2,"0")}`;
+  return s;
 }
 
 function useSort(){
@@ -884,15 +902,16 @@ function BarraOpenFinance({temOF,ultimoSync,pluggyEm,erroSync,conciliacao,conexo
 
 const COLS_FATURA=["Data","Descrição","Cartão","Valor","Dono","Classificação","Obs",""];
 const ACESSORES_FATURA={
-  // Data vem ISO ("2026-08-16"), então ordena certo como texto.
-  "Data":r=>r.data,"Descrição":r=>r.nome,"Cartão":r=>r.cartao,"Valor":r=>r.valor,
+  // A tabela fechada mistura Open Finance com linhas legadas, que podem ter
+  // guardado a data noutro formato. chaveData nivela antes de comparar.
+  "Data":r=>chaveData(r.data),"Descrição":r=>r.nome,"Cartão":r=>r.cartao,"Valor":r=>r.valor,
   "Dono":r=>r.dono,"Classificação":r=>r.parcelas,"Obs":r=>r.obs,
 };
 
 const COLS_MANUAL=["Data","Descrição","Valor","Cartão","Dono","Classificação","Obs",""];
 const ACESSORES_MANUAL={
-  // Aqui a data é texto livre "dd/mm" digitado por você, não ISO.
-  "Data":r=>chaveDataCurta(r.data),"Descrição":r=>r.nome,"Valor":r=>r.valor,
+  // Aqui a data costuma ser "dd/mm" digitado por você, mas pode ser completa.
+  "Data":r=>chaveData(r.data),"Descrição":r=>r.nome,"Valor":r=>r.valor,
   "Cartão":r=>r.cartao,"Dono":r=>r.dono,"Classificação":r=>r.parcelas,"Obs":r=>r.obs,
 };
 
