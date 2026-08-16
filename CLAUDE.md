@@ -91,11 +91,14 @@ construção — era o caso com um único sync às 5h. Por isso o padrão passou
 `HORAS_SYNC`). `OF_SYNC_LOG` registra cada observação, e `historicoSync()`
 mostra a que horas o Pluggy realmente visita — aí dá para alinhar o gatilho.
 
+> A API **não expõe `nextAutoSyncAt`** para este item (verificado no dump cru), então
+> não há como consultar o agendamento: só observando ao longo dos dias.
+
 ### Frescor: duas idades diferentes
 
 `sincronizarAgora()` lê o que o **Pluggy já tem em cache**. Se o Pluggy não foi ao banco hoje, a compra de hoje não existe para nós por mais que se sincronize. `atualizarDoBancoESincronizar()` faz `PATCH /items/{id}`, que é o que manda o Pluggy ao banco — fica manual porque forçar todo dia gasta a conexão, e conector com MFA pode parar em `WAITING_USER_INPUT`. A faixa do app mostra as duas idades separadas.
 
-> **Meu Pluggy recusa o PATCH** com `400 MeuPluggy item cant be updated`. É restrição de **autorização**, não impedimento técnico: o item pertence à aplicação Meu Pluggy e nossa `clientId` é outra aplicação, com leitura mas sem escrita sobre ele. Verificado na prática — pelo site do Meu Pluggy a mesma atualização roda **sem pedir senha**, o widget abre com o CPF preenchido e coleta em ~1 min.
+> **Meu Pluggy recusa o PATCH** com `400 MeuPluggy item cant be updated`. O item vem com `clientUserId: my-pluggy:<email>` e `connector: Itaú #601` — o prefixo `my-pluggy:` é o que o marca como pertencente àquela aplicação. É restrição de **autorização**, não impedimento técnico: o item pertence à aplicação Meu Pluggy e nossa `clientId` é outra aplicação, com leitura mas sem escrita sobre ele. Verificado na prática — pelo site do Meu Pluggy a mesma atualização roda **sem pedir senha**, o widget abre com o CPF preenchido e coleta em ~1 min.
 >
 > **Caminho manual:** `https://meu.pluggy.ai/connections/<itemId>` → botão **Atualizar** → voltar ao app e clicar 🔄. O app monta esse link sozinho na faixa de aviso quando o dado passa de 24h.
 >

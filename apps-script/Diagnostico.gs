@@ -79,17 +79,34 @@ function diagnosticoOpenFinance() {
       p('     próxima visita: o Pluggy não informa (sem nextAutoSyncAt)');
     }
 
+    // Cada produto tem o próprio lastUpdatedAt. Interessa porque cartão pode
+    // atualizar em ritmo diferente de investimento — e é o cartão que importa
+    // aqui. Vinha truncado junto com o resto do statusDetail.
+    if (it.statusDetail && typeof it.statusDetail === 'object') {
+      p('');
+      p('   ATUALIZAÇÃO POR PRODUTO:');
+      Object.keys(it.statusDetail).sort().forEach(function (prod) {
+        var d = it.statusDetail[prod] || {};
+        var marca = (prod === 'creditCards') ? ' ← o que nos interessa' : '';
+        p('     ' + prod + ': ' + (d.isUpdated ? 'ok' : 'NÃO atualizado') +
+          '  ' + _quando(d.lastUpdatedAt) +
+          ((d.warnings && d.warnings.length) ? '  ⚠️ ' + d.warnings.length + ' aviso(s)' : '') +
+          marca);
+      });
+    }
+
     // Todos os campos do item, sem filtro: se o Pluggy passar a expor algo
     // novo sobre agendamento, aparece aqui sem precisar mexer no código.
     p('');
     p('   CAMPOS CRUS DO ITEM:');
     Object.keys(it).sort().forEach(function (k) {
+      if (k === 'statusDetail') return;              // já detalhado acima
       var v = it[k];
       if (v === null || v === undefined || v === '') return;
       if (typeof v === 'object') {
-        v = (k === 'connector') ? (v.name + ' #' + v.id) : JSON.stringify(v).slice(0, 120);
+        v = (k === 'connector') ? (v.name + ' #' + v.id) : JSON.stringify(v);
       }
-      p('     ' + k + ': ' + v);
+      p('     ' + k + ': ' + String(v).slice(0, 400));
     });
 
     linhasLog.push({ itemId: itemId, conector: conector, item: it });
@@ -133,11 +150,16 @@ function diagnosticoOpenFinance() {
 
   p('');
   p('   COMPRA MAIS RECENTE QUE TEMOS (ignorando parcelas futuras):');
+  var hojeIso = _isoData(agora);
   var txTopo = '';
   Object.keys(maisRecente).forEach(function (c) {
     var iso = _isoData(new Date(maisRecente[c]));
     if (iso > txTopo) txTopo = iso;
-    p('     ' + (nomes[c] || c) + ': ' + iso + '  (' + _idade(maisRecente[c]) + ')');
+    // Data de transação não tem hora, então idade em horas engana: uma compra
+    // de hoje apareceria como "17h atrás" só porque conta desde a meia-noite.
+    var dias = Math.round((new Date(hojeIso) - new Date(iso)) / 86400000);
+    var quanto = dias <= 0 ? 'hoje' : dias === 1 ? 'ontem' : 'há ' + dias + ' dias';
+    p('     ' + (nomes[c] || c) + ': ' + iso + '  (' + quanto + ')');
   });
   if (!Object.keys(maisRecente).length) p('     (nenhuma)');
 
