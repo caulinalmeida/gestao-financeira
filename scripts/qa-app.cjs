@@ -49,6 +49,8 @@ const alvos = [
   'function semSufixoParcela(',
   'function participantes(', 'function valorDe(', 'function donoCanonico(',
   'function terceirosDe(', 'function chavePago(', 'function chaveGrupo(',
+  'function cmpValor(', 'function ordenarLinhas(', 'function chaveDataCurta(',
+  'function mesFaturaDe(', 'function diaFechamentoPadrao(', 'function mesAtualKey(',
 ];
 const pedacos = [];
 let faltou = [];
@@ -548,6 +550,122 @@ console.log('\n=== 13. chavePago (tem que sobreviver ao F5) ===');
      CG('2026-08', 'Black', 'Caulin', 'fixos') !== CG('2026-08', 'Platinum', 'Caulin', 'fixos'));
   ok('chave de grupo não colide com chave de linha',
      CG('2026-08', 'Black', 'Caulin', 'fixos') !== CP('2026-08', 'CONTA', conta1));
+}
+
+// ── 14. Ordenação das tabelas ────────────────────────────────────────────────
+console.log('\n=== 14. ordenarLinhas (clique no cabeçalho) ===');
+{
+  const OL = ctx.ordenarLinhas;
+  const AC = { nome: r => r.nome, valor: r => r.valor };
+  const linhas = [
+    { nome: 'Carrefour', valor: 30 },
+    { nome: 'Ifood', valor: 10 },
+    { nome: 'Amazon', valor: 20 },
+  ];
+  const nomes = xs => xs.map(x => x.nome);
+
+  eq('sem sort devolve a ordem original',
+     nomes(OL(linhas, null, AC)), ['Carrefour', 'Ifood', 'Amazon']);
+  eq('asc por texto', nomes(OL(linhas, { col: 'nome', dir: 'asc' }, AC)),
+     ['Amazon', 'Carrefour', 'Ifood']);
+  eq('desc por texto', nomes(OL(linhas, { col: 'nome', dir: 'desc' }, AC)),
+     ['Ifood', 'Carrefour', 'Amazon']);
+  eq('asc por número', nomes(OL(linhas, { col: 'valor', dir: 'asc' }, AC)),
+     ['Ifood', 'Amazon', 'Carrefour']);
+  eq('coluna desconhecida não quebra',
+     nomes(OL(linhas, { col: 'inexistente', dir: 'asc' }, AC)),
+     ['Carrefour', 'Ifood', 'Amazon']);
+
+  const antes = linhas.slice();
+  OL(linhas, { col: 'nome', dir: 'asc' }, AC);
+  eq('não muta o array de entrada (é state do React)', nomes(linhas), nomes(antes));
+
+  // Número como número, não como texto: senão 100 viria antes de 20.
+  const nums = [{ nome: 'a', valor: 100 }, { nome: 'b', valor: 20 }];
+  eq('ordena numericamente, não lexicograficamente',
+     nomes(OL(nums, { col: 'valor', dir: 'asc' }, AC)), ['b', 'a']);
+
+  // Vazio por último NOS DOIS SENTIDOS — quem ordena por Dono quer ver os
+  // classificados, não os sem dono.
+  const comVazio = [
+    { nome: 'sem', dono: '' },
+    { nome: 'cau', dono: 'Caulin' },
+    { nome: 'lua', dono: 'Luanna' },
+  ];
+  const AD = { dono: r => r.dono };
+  eq('vazio por último no asc',
+     nomes(OL(comVazio, { col: 'dono', dir: 'asc' }, AD)), ['cau', 'lua', 'sem']);
+  eq('vazio por último no desc também',
+     nomes(OL(comVazio, { col: 'dono', dir: 'desc' }, AD)), ['lua', 'cau', 'sem']);
+
+  // Estabilidade: empatar no critério não pode embaralhar o resto.
+  const empate = [
+    { nome: 'primeiro', dono: 'Caulin' },
+    { nome: 'segundo', dono: 'Caulin' },
+    { nome: 'terceiro', dono: 'Caulin' },
+  ];
+  eq('empate mantém a ordem original (asc)',
+     nomes(OL(empate, { col: 'dono', dir: 'asc' }, AD)),
+     ['primeiro', 'segundo', 'terceiro']);
+  eq('empate mantém a ordem original no desc também',
+     nomes(OL(empate, { col: 'dono', dir: 'desc' }, AD)),
+     ['primeiro', 'segundo', 'terceiro']);
+
+  // Acento não pode jogar "Ática" para depois de "Zebra".
+  const acento = [{ nome: 'Zebra' }, { nome: 'Ática' }, { nome: 'Ana' }];
+  eq('acento ordena como a letra base',
+     nomes(OL(acento, { col: 'nome', dir: 'asc' }, { nome: r => r.nome })),
+     ['Ana', 'Ática', 'Zebra']);
+
+  console.log('\n=== 14b. chaveDataCurta (o "dd/mm" digitado à mão) ===');
+  const CD = ctx.chaveDataCurta;
+  eq('inverte para ordenar', CD('05/09'), '09-05');
+  eq('completa um dígito', CD('5/9'), '09-05');
+  ok('02/10 vem depois de 10/09 (ordem lexicográfica ficaria errada)',
+     CD('02/10') > CD('10/09'));
+  eq('texto que não é data passa direto', CD('amanhã'), 'amanhã');
+  eq('vazio é seguro', CD(''), '');
+}
+
+// ── 15. Mês atual = fatura aberta, não o calendário ──────────────────────────
+console.log('\n=== 15. mesFaturaDe / mesAtualKey ===');
+{
+  const MF = ctx.mesFaturaDe;
+  // Itaú fecha dia 3. Foi o caso real: em 16/08 o app abria em AGOSTO, fatura
+  // já fechada, em vez de SETEMBRO, que é a que está sendo montada.
+  eq('compra depois do fechamento vai para a fatura seguinte',
+     MF(new Date(2026, 7, 16), 3), '2026-09');
+  eq('compra antes do fechamento fica na fatura do mês',
+     MF(new Date(2026, 7, 2), 3), '2026-08');
+  eq('compra NO dia do fechamento já é a seguinte (>=, não >)',
+     MF(new Date(2026, 7, 3), 3), '2026-09');
+  eq('dezembro vira janeiro do ano seguinte',
+     MF(new Date(2026, 11, 20), 3), '2027-01');
+  eq('sem dia de fechamento cai no mês do calendário',
+     MF(new Date(2026, 7, 16), 0), '2026-08');
+  eq('data inválida devolve null', MF('não é data', 3), null);
+
+  const DF = ctx.diaFechamentoPadrao;
+  eq('lê o dia de fechamento dos cartões',
+     DF([{ fechamento: '3' }, { fechamento: '3' }]), 3);
+  eq('vence o mais frequente',
+     DF([{ fechamento: '3' }, { fechamento: '3' }, { fechamento: '10' }]), 3);
+  eq('empate resolve pelo menor dia',
+     DF([{ fechamento: '10' }, { fechamento: '3' }]), 3);
+  eq('sem cartões devolve 0', DF([]), 0);
+  eq('undefined é seguro', DF(undefined), 0);
+  eq('valor inválido é ignorado', DF([{ fechamento: 'x' }, { fechamento: '3' }]), 3);
+
+  // Não dá para fixar a data de hoje aqui, mas dá para provar a relação: com
+  // fechamento dia 1, todo dia do mês cai na fatura seguinte.
+  const hoje = new Date();
+  const calendario = ctx.mesKey(hoje.getFullYear(), hoje.getMonth());
+  eq('sem cartão sincronizado, mesAtualKey = mês do calendário',
+     ctx.mesAtualKey([]), calendario);
+  ok('com fechamento dia 1, mesAtualKey adianta para a fatura seguinte',
+     ctx.mesAtualKey([{ fechamento: '1' }]) === ctx.mesProximo(calendario));
+  ok('com fechamento dia 31, mesAtualKey quase sempre é o mês corrente',
+     hoje.getDate() >= 31 || ctx.mesAtualKey([{ fechamento: '31' }]) === calendario);
 }
 
 console.log('\n' + '='.repeat(52));

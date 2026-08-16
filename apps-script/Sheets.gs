@@ -9,6 +9,9 @@
  *
  * Exceção controlada: a chave `pedido_sync` em OF_STATUS é escrita pelo app
  * (botão "Atualizar agora") e lida/limpa aqui.
+ *
+ * Segunda exceção, fora deste arquivo: Limpeza.gs escreve nas abas do app.
+ * É operação manual e pontual, com o app fechado — nunca em gatilho.
  */
 
 function _planilha() {
@@ -119,9 +122,10 @@ function gravarCartoes(cartoes) {
 function gravarFaturas(faturas) {
   var s = aba(ABA_FATURAS, COLS_FATURAS);
   var agora = new Date();
-  var linhas = faturas.map(function (f) {
-    return [f.account_id, f.mes_ref, f.vencimento, f.fechamento, f.total_banco, agora];
-  });
+  var linhas = faturas.filter(function (f) { return !_antesDoPiso(f.mes_ref); })
+    .map(function (f) {
+      return [f.account_id, f.mes_ref, f.vencimento, f.fechamento, f.total_banco, agora];
+    });
   linhas.sort(function (a, b) { return String(b[1]).localeCompare(String(a[1])); });
   escreverLinhas(s, linhas, COLS_FATURAS.length);
 }
@@ -146,6 +150,7 @@ function gravarTransacoes(novas, accountIds, dataDe, dataAte) {
   var iId = col(COLS_TRANSACOES, 'pluggy_tx_id');
   var iConta = col(COLS_TRANSACOES, 'account_id');
   var iData = col(COLS_TRANSACOES, 'data');
+  var iMes = col(COLS_TRANSACOES, 'mes_ref');
 
   var existentes = lerLinhas(s, n);
 
@@ -157,6 +162,7 @@ function gravarTransacoes(novas, accountIds, dataDe, dataAte) {
 
   var preservadas = existentes.filter(function (l) {
     if (!l[iId]) return false;                       // linha vazia
+    if (_antesDoPiso(l[iMes])) return false;         // abaixo do piso: descarta
     if (!contas[String(l[iConta])]) return true;     // conta que não sincronizamos
     var t = new Date(l[iData]).getTime();
     if (isNaN(t)) return true;                       // data ilegível: preserva por segurança
@@ -165,11 +171,14 @@ function gravarTransacoes(novas, accountIds, dataDe, dataAte) {
 
   var agora = new Date();
   // Monta cada linha a partir do contrato de colunas, na ordem declarada.
-  var linhasNovas = novas.map(function (t) {
-    return COLS_TRANSACOES.map(function (c) {
-      return c === 'atualizado_em' ? agora : (t[c] === undefined ? '' : t[c]);
+  // O piso é aplicado aqui e não na janela: a janela precisa continuar larga
+  // para o mês mais antigo que se mantém nascer completo.
+  var linhasNovas = novas.filter(function (t) { return !_antesDoPiso(t.mes_ref); })
+    .map(function (t) {
+      return COLS_TRANSACOES.map(function (c) {
+        return c === 'atualizado_em' ? agora : (t[c] === undefined ? '' : t[c]);
+      });
     });
-  });
 
   var todas = preservadas.concat(linhasNovas);
   // Ordena por data desc para a aba ficar legível quando inspecionada na mão.

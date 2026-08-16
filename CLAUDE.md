@@ -192,6 +192,8 @@ Projeta as parcelas futuras a partir de `OF_TRANSACOES`, **sem armazenar nada no
 - `category`/`merchant` do Pluggy são enriquecimento de plano pago e vêm nulos — por isso o dicionário continua sendo o cérebro da categorização
 
 ### Meses
+- **"Mês atual" é o da fatura ABERTA, não o do calendário.** Com o Itaú fechando dia 3, uma compra de 16/08 cai na fatura que fecha em 03/09 — setembro. `mesAtualKey(ofCartoes)` deriva isso do dia de fechamento dos cartões (`mesFaturaDe`), com a mesma regra `>=` do sincronizador. Sem cartão sincronizado, cai no mês do calendário.
+- **Piso de histórico**: `MES_MINIMO` em `Config.gs` (hoje `2026-08`). Nada anterior é gravado ou preservado nas abas `OF_*`. Existe porque a janela de sync alcança 210 dias para trás — sem o piso, todo sync ressuscitaria o que `limparHistorico()` acabou de apagar. O piso **não corta o futuro**: parcelas de 2027 continuam entrando, e são elas que fazem a aba Parcelas projetar.
 - A chave é **`ANO-MÊS`** (`"2026-08"`), não mais o nome do mês. O modelo antigo tinha 12 baldes fixos e JANEIRO/2027 sobrescreveria JANEIRO/2026.
 - `parseMesRef()` aceita os dois formatos, então dados legados continuam legíveis
 - Cada mês tem seu próprio conjunto isolado de: fatura, lançamentos manuais, contas, investimentos
@@ -276,10 +278,13 @@ A `chave` vem do **conteúdo** da linha, não do id — contas e investimentos r
 | `investigarParcelas()` | Agrupa as compras parceladas e diagnostica projeção errada |
 | `diagnosticoOpenFinance()` | Fotografia dos três saltos + campos crus do item |
 | `historicoSync()` | A que horas o Pluggy visita o banco, pelos dados de `OF_SYNC_LOG` |
+| `testarWidgetUpdate()` | Se o widget do Pluggy Connect cabe no app (hoje: não, 403) |
 | `testarConexao()` | Valida credenciais e lista os cartões conectados |
 | `sincronizarAgora()` | Sync completo, na hora |
 | `conferirFatura()` | Compara nosso total com o do banco, mês a mês |
 | `criarGatilhos()` | Liga o sync diário (5h) e o poller de 5 min |
+| `simularLimpezaHistorico()` / `limparHistorico()` | Apaga tudo anterior a `MES_MINIMO` (**app fechado**, ver `Limpeza.gs`) |
+| `limparSyncLog(n)` | Poda `OF_SYNC_LOG` para as últimas N linhas (padrão 200) |
 | `simularMigracaoMeses()` / `migrarMeses()` | Migração `MAIO` → `2026-05` (já rodada) |
 | `popularDadosExemplo()` / `limparDadosExemplo()` | Fixtures para desenvolver sem o Pluggy |
 
@@ -302,6 +307,8 @@ O botão Run do Apps Script **não passa parâmetros** — por isso existe `Atal
 13. **Número da parcela dentro da descrição** — quebrava o agrupamento por descrição e o dicionário. Resolvido com `semSufixoParcela()`.
 14. **Parcela futura empurrada um mês** — vem datada com o vencimento da fatura, e o CICLO tratava como data de compra. Resolvido com a regra AGENDADA.
 15. **"Pago" sumia no F5 e vazava entre meses** — era `useState` puro com chave sem mês. Resolvido com `CHECKLIST_PAGO` e chave derivada do conteúdo.
+16. **App abria no mês do calendário** — em 16/08 caía em agosto, uma fatura já fechada, justamente no mês em que se está gastando. O mês certo é o da fatura aberta, derivado do dia de fechamento do cartão.
+17. **Limpeza de histórico desfeita pela edição seguinte** — o app guarda todos os meses em memória e reescreve as abas dele por inteiro a cada edição. Limpar a planilha com o app aberto traz tudo de volta no primeiro clique. Por isso `Limpeza.gs` exige o app fechado e um F5 depois.
 
 ## Estilo visual (design system informal)
 

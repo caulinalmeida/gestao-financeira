@@ -58,7 +58,51 @@ function mesLabel(key){const{ano,mesIdx}=mesPartes(key);return`${MESES[mesIdx]||
 function mesLabelCurto(key){const{ano,mesIdx}=mesPartes(key);return`${(MESES[mesIdx]||"?").substring(0,3)}/${String(ano).slice(2)}`;}
 function mesAnterior(key){const{ano,mesIdx}=mesPartes(key);return mesIdx===0?mesKey(ano-1,11):mesKey(ano,mesIdx-1);}
 function mesProximo(key){const{ano,mesIdx}=mesPartes(key);return mesIdx===11?mesKey(ano+1,0):mesKey(ano,mesIdx+1);}
-function mesAtualKey(){const d=new Date();return mesKey(d.getFullYear(),d.getMonth());}
+
+/**
+ * Em que fatura cai uma compra feita nesta data.
+ *
+ * Mesma convenção do sincronizador (`_mesPorCiclo` em Sync.gs): a compra feita
+ * NO dia do fechamento já entra na fatura seguinte, então o teste é `>=`.
+ */
+function mesFaturaDe(data,diaFechamento){
+  const d=data instanceof Date?data:new Date(data);
+  if(isNaN(d.getTime())) return null;
+  let ano=d.getFullYear(),mes=d.getMonth();
+  if(diaFechamento>0&&d.getDate()>=diaFechamento) mes+=1;
+  while(mes>11){mes-=12;ano+=1;}
+  return mesKey(ano,mes);
+}
+
+/** Dia de fechamento predominante entre os cartões sincronizados. */
+function diaFechamentoPadrao(cartoes){
+  const cont={};
+  (cartoes||[]).forEach(c=>{
+    const d=parseInt(c.fechamento,10);
+    if(d>=1&&d<=31) cont[d]=(cont[d]||0)+1;
+  });
+  const dias=Object.keys(cont).map(Number);
+  if(!dias.length) return 0;
+  // Empate resolve pelo menor dia: adiantar erra menos que atrasar, porque a
+  // fatura que interessa é sempre a que está sendo montada agora.
+  return dias.sort((a,b)=>cont[b]-cont[a]||a-b)[0];
+}
+
+/**
+ * O "mês atual" do app é o da fatura ABERTA, não o do calendário.
+ *
+ * Com o Itaú fechando dia 3, uma compra de 16/08 cai na fatura que fecha em
+ * 03/09 e vence em 10/09 — setembro. Usar o mês do calendário abria o app em
+ * agosto, uma fatura já fechada, bem no mês em que se está gastando.
+ *
+ * Sem cartão sincronizado (antes do primeiro load) cai no mês do calendário,
+ * que é o melhor palpite disponível.
+ */
+function mesAtualKey(cartoes){
+  const hoje=new Date();
+  return mesFaturaDe(hoje,diaFechamentoPadrao(cartoes))
+    ||mesKey(hoje.getFullYear(),hoje.getMonth());
+}
 
 // ── Google Auth ───────────────────────────────────────────────────────────────
 let tokenClient = null;
@@ -525,7 +569,79 @@ const card={background:C.surface,border:`1px solid ${C.borderSoft}`,borderRadius
 const th={padding:"9px 10px",textAlign:"left",color:C.textMuted,fontWeight:600,fontSize:10,whiteSpace:"nowrap",borderBottom:`1px solid ${C.border}`,textTransform:"uppercase",letterSpacing:"0.06em"};
 const td={padding:"8px 10px",fontSize:13,color:C.text,borderBottom:`1px solid ${C.borderSoft}`};
 
+// ── Ordenação das tabelas ─────────────────────────────────────────────────────
+// Clicar no cabeçalho alterna asc → desc → sem ordenação. O terceiro estado não
+// é enfeite: a ordem natural de várias tabelas carrega informação (a fatura vem
+// por data, o manual na ordem em que foi digitado), e sem ele não haveria volta.
+
+/** Compara sem saber o tipo: número como número, o resto como texto pt-BR. */
+function cmpValor(a,b){
+  if(typeof a==="number"&&typeof b==="number") return a-b;
+  // `numeric` faz "10/12" vir depois de "09/12" em vez da ordem lexicográfica.
+  return String(a??"").localeCompare(String(b??""),"pt-BR",{numeric:true,sensitivity:"base"});
+}
+
+/**
+ * `sort` é {col,dir} ou null; `acessores` mapeia nome da coluna → getter.
+ * Devolve um array novo — o do state nunca é mutado.
+ */
+function ordenarLinhas(linhas,sort,acessores){
+  if(!sort||!acessores||!acessores[sort.col]) return linhas;
+  const get=acessores[sort.col];
+  const sinal=sort.dir==="desc"?-1:1;
+  const vazio=v=>v===null||v===undefined||v==="";
+  return linhas.map((l,i)=>({l,i,v:get(l)})).sort((a,b)=>{
+    // Vazio por último nos DOIS sentidos. Quem ordena por Dono quer ver os
+    // classificados; jogar os sem dono no topo ao inverter só atrapalharia.
+    if(vazio(a.v)!==vazio(b.v)) return vazio(a.v)?1:-1;
+    const r=cmpValor(a.v,b.v);
+    // Índice como desempate: reordenar por uma coluna não embaralha o que ela
+    // não distingue — duas compras do mesmo dia mantêm a ordem que já tinham.
+    return r!==0?r*sinal:a.i-b.i;
+  }).map(x=>x.l);
+}
+
+/** "dd/mm" ordena errado como texto (02/10 antes de 10/09). Invertido, ordena. */
+function chaveDataCurta(v){
+  const m=String(v||"").match(/^(\d{1,2})\/(\d{1,2})$/);
+  return m?`${m[2].padStart(2,"0")}-${m[1].padStart(2,"0")}`:String(v||"");
+}
+
+function useSort(){
+  const [sort,setSort]=useState(null);
+  const toggle=useCallback(col=>setSort(s=>
+    !s||s.col!==col?{col,dir:"asc"}:s.dir==="asc"?{col,dir:"desc"}:null),[]);
+  return [sort,toggle];
+}
+
 // ── UI Components ─────────────────────────────────────────────────────────────
+/**
+ * Cabeçalho de tabela ordenável. Cada item de `cols` é o rótulo (que também é a
+ * chave no mapa de acessores) ou "" para a coluna de ações, que não ordena.
+ */
+function Thead({cols,sort,toggle}){
+  return(
+    <thead><tr style={{background:C.surfaceAlt}}>
+      {cols.map((c,i)=>{
+        if(!c) return <th key={i} style={th}/>;
+        const ativo=sort&&sort.col===c;
+        return(
+          <th key={i} onClick={()=>toggle(c)}
+            title={!ativo?`Ordenar por ${c}`
+              :sort.dir==="asc"?"Crescente — clique para inverter"
+              :"Decrescente — clique para voltar ao normal"}
+            style={{...th,cursor:"pointer",userSelect:"none",color:ativo?C.teal600:C.textMuted}}>
+            {c}
+            <span style={{marginLeft:4,fontSize:9,opacity:ativo?1:0.3}}>
+              {ativo?(sort.dir==="asc"?"▲":"▼"):"⇅"}
+            </span>
+          </th>
+        );
+      })}
+    </tr></thead>
+  );
+}
+
 function Btn({active,danger,small,children,onClick,style={},disabled,title}){
   const base={fontSize:small?11:13,padding:small?"5px 10px":"8px 18px",borderRadius:8,border:"1px solid",cursor:disabled?"not-allowed":"pointer",fontWeight:active?600:500,display:"inline-flex",alignItems:"center",gap:5,opacity:disabled?0.45:1,transition:"background .15s,border-color .15s,color .15s",...style};
   const theme=danger
@@ -766,13 +882,48 @@ function BarraOpenFinance({temOF,ultimoSync,pluggyEm,erroSync,conciliacao,conexo
   );
 }
 
+const COLS_FATURA=["Data","Descrição","Cartão","Valor","Dono","Classificação","Obs",""];
+const ACESSORES_FATURA={
+  // Data vem ISO ("2026-08-16"), então ordena certo como texto.
+  "Data":r=>r.data,"Descrição":r=>r.nome,"Cartão":r=>r.cartao,"Valor":r=>r.valor,
+  "Dono":r=>r.dono,"Classificação":r=>r.parcelas,"Obs":r=>r.obs,
+};
+
+const COLS_MANUAL=["Data","Descrição","Valor","Cartão","Dono","Classificação","Obs",""];
+const ACESSORES_MANUAL={
+  // Aqui a data é texto livre "dd/mm" digitado por você, não ISO.
+  "Data":r=>chaveDataCurta(r.data),"Descrição":r=>r.nome,"Valor":r=>r.valor,
+  "Cartão":r=>r.cartao,"Dono":r=>r.dono,"Classificação":r=>r.parcelas,"Obs":r=>r.obs,
+};
+
+const COLS_CONTAS=["Transação","Valor (R$)","Dono","Tipo","Obs",""];
+const ACESSORES_CONTAS={
+  // Valor é string BR ("1.250,00"): sem parseBRL ordenaria como texto.
+  "Transação":r=>r.transacao,"Valor (R$)":r=>parseBRL(r.valor),
+  "Dono":r=>r.dono,"Tipo":r=>r.tipo,"Obs":r=>r.obs,
+};
+
+const COLS_INVEST=["Descrição","Valor (R$)","Dono","Onde",""];
+const ACESSORES_INVEST={
+  "Descrição":r=>r.descricao,"Valor (R$)":r=>parseBRL(r.valor),
+  "Dono":r=>r.dono,"Onde":r=>r.obs,
+};
+
+const COLS_PARC_MES=["Compra","Cartão","Parcela","Valor",""];
+const ACESSORES_PARC_MES={
+  "Compra":p=>p.nome,"Cartão":p=>p.cartao,"Parcela":p=>p.num,"Valor":p=>p.valor,
+};
+
 /** Tabela de fatura. Serve tanto para Open Finance quanto para linhas legadas. */
 function TabelaFatura({titulo,subtitulo,linhas,isMobile,pessoas,filtro,setFiltro,
   mostrarIgnoradas,setMostrarIgnoradas,mostrarPagamentos,setMostrarPagamentos,
   onCampo,onIgnorar,onAprender,onLegado,onRemoverLegado}){
 
+  const [sort,toggleSort]=useSort();
   const filtros=["TODOS","PARCELADO","RECORRENTE","VARIÁVEL","NOVO"];
-  const vis=linhas.filter(r=>filtro==="TODOS"?true:filtro==="NOVO"?r.isNew:r.parcelas===filtro);
+  const vis=ordenarLinhas(
+    linhas.filter(r=>filtro==="TODOS"?true:filtro==="NOVO"?r.isNew:r.parcelas===filtro),
+    sort,ACESSORES_FATURA);
   const novos=linhas.filter(r=>r.isNew).length;
   const semDono=linhas.filter(r=>!r.dono&&!r.ignorada&&r.natureza!=="PAGAMENTO").length;
   const total=totalFatura(linhas);
@@ -822,9 +973,7 @@ function TabelaFatura({titulo,subtitulo,linhas,isMobile,pessoas,filtro,setFiltro
 
       <div style={{overflowX:"auto"}}>
         <table style={{width:"100%",fontSize:12,borderCollapse:"collapse",minWidth:isMobile?620:680}}>
-          <thead><tr style={{background:C.surfaceAlt}}>
-            {["Data","Descrição","Cartão","Valor","Dono","Classificação","Obs",""].map(h=><th key={h} style={th}>{h}</th>)}
-          </tr></thead>
+          <Thead cols={COLS_FATURA} sort={sort} toggle={toggleSort}/>
           <tbody>
             {vis.map(r=>{
               const leg=r.origem==="LEGADO";
@@ -903,8 +1052,17 @@ function ConfirmModal({titulo,texto,onConfirm,onClose}){
  * segunda é "o que vai sair da conta em breve" — por isso o alerta de quitação
  * fica no topo, antes da lista.
  */
+const COLS_COMPRAS=["Compra","Obs","Cartão","Dono","Próxima","Valor/mês","Restam","Falta","Termina"];
+const ACESSORES_COMPRAS={
+  "Compra":c=>c.nome,"Obs":c=>c.obs,"Cartão":c=>c.cartao,"Dono":c=>c.dono,
+  "Próxima":c=>c.proximaNum,"Valor/mês":c=>c.valorParcela,
+  "Restam":c=>c.restantes,"Falta":c=>c.falta,"Termina":c=>c.mesFinal,
+};
+
 function PainelParcelas({proj,mesRef,isMobile,onVerMes}){
   const{compras,porMes,terminando,totalFalta,totalMesBase}=proj;
+  const [sort,toggleSort]=useSort();
+  const comprasOrd=ordenarLinhas(compras,sort,ACESSORES_COMPRAS);
   const pico=Math.max(...porMes.map(m=>m.total),1);
   const mesesComAlgo=porMes.filter(m=>m.total>0);
   const liberaNoMes=terminando.reduce((a,c)=>a+c.valorParcela,0);
@@ -981,11 +1139,8 @@ function PainelParcelas({proj,mesRef,isMobile,onVerMes}){
         <SectionLabel>Compras em andamento</SectionLabel>
         <div style={{overflowX:"auto"}}>
           <table style={{width:"100%",fontSize:12,borderCollapse:"collapse",minWidth:640}}>
-            <thead><tr style={{background:C.surfaceAlt}}>
-              {["Compra","Obs","Cartão","Dono","Próxima","Valor/mês","Restam","Falta","Termina"].map(h=>
-                <th key={h} style={th}>{h}</th>)}
-            </tr></thead>
-            <tbody>{compras.map(c=>(
+            <Thead cols={COLS_COMPRAS} sort={sort} toggle={toggleSort}/>
+            <tbody>{comprasOrd.map(c=>(
               <tr key={c.chave}>
                 <td style={{...td,maxWidth:180}}>
                   <div style={{whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}
@@ -1029,9 +1184,17 @@ function PainelParcelas({proj,mesRef,isMobile,onVerMes}){
  * Junta as duas coisas que você configura uma vez e quase não mexe: o
  * dicionário de categorização e o cadastro de pessoas.
  */
+const COLS_DICT=["Padrão","Dono","Classificação","Obs","Usos",""];
+
 function PainelConfig({dict,onDict,pessoas,onPessoas,usoDoDict,isMobile}){
   const [nova,setNova]=useState("");
   const [filtroDict,setFiltroDict]=useState("");
+  const [sort,toggleSort]=useSort();
+  // "Usos" depende de usoDoDict, então o mapa se monta aqui e não no módulo.
+  const acessoresDict={
+    "Padrão":d=>d.key,"Dono":d=>d.dono,"Classificação":d=>d.parcelas,
+    "Obs":d=>d.obs,"Usos":d=>usoDoDict[d.key]||0,
+  };
 
   const addPessoa=()=>{
     const n=nova.trim();
@@ -1042,9 +1205,9 @@ function PainelConfig({dict,onDict,pessoas,onPessoas,usoDoDict,isMobile}){
     }
     onPessoas([...pessoas,n]); setNova("");
   };
-  const visiveis=filtroDict
-    ? dict.filter(d=>normalize(d.key).includes(normalize(filtroDict)))
-    : dict;
+  const visiveis=ordenarLinhas(
+    filtroDict?dict.filter(d=>normalize(d.key).includes(normalize(filtroDict))):dict,
+    sort,acessoresDict);
 
   return(
     <div>
@@ -1094,9 +1257,7 @@ function PainelConfig({dict,onDict,pessoas,onPessoas,usoDoDict,isMobile}){
           ?<EmptyState icon="🧠">Vazio. Use “Aprender” na fatura para ensinar.</EmptyState>
           :<div style={{overflowX:"auto"}}>
             <table style={{width:"100%",fontSize:12,borderCollapse:"collapse",minWidth:isMobile?460:520}}>
-              <thead><tr style={{background:C.surfaceAlt}}>
-                {["Padrão","Dono","Classificação","Obs","Usos",""].map(h=><th key={h} style={th}>{h}</th>)}
-              </tr></thead>
+              <Thead cols={COLS_DICT} sort={sort} toggle={toggleSort}/>
               <tbody>{visiveis.map((d,i)=>{
                 const idx=dict.indexOf(d);
                 const upd=(campo,v)=>onDict(dict.map((x,j)=>j===idx?{...x,[campo]:v}:x));
@@ -1322,7 +1483,9 @@ function useMediaQuery(query){
 export default function App(){
   const [tab,setTab]=useState(0);
   const [faturaTab,setFaturaTab]=useState(0);
-  const [mesRef,setMesRef]=useState(mesAtualKey);
+  // Sem cartão ainda: cai no mês do calendário e loadAllData corrige depois,
+  // já com o dia de fechamento em mãos.
+  const [mesRef,setMesRef]=useState(()=>mesAtualKey());
   const [dict,setDict]=useState([]);
   const [dadosMes,setDadosMes]=useState({});
   const [filtro,setFiltro]=useState("TODOS");
@@ -1342,6 +1505,13 @@ export default function App(){
   const [showCartoes,setShowCartoes]=useState(false);
   const [parcelaMes,setParcelaMes]=useState(null);
   const [modal,setModal]=useState(null);
+  // Ordenação das tabelas que moram direto no App (as demais têm o hook no
+  // próprio componente). Uma por tabela, para ordenar Contas não mexer em
+  // Investimentos.
+  const [sortManual,toggleManual]=useSort();
+  const [sortContas,toggleContas]=useSort();
+  const [sortInvest,toggleInvest]=useSort();
+  const [sortParcMes,toggleParcMes]=useSort();
   // Terceiros que usam o cartão. Cadastro reutilizável, para o mesmo nome
   // escrito de duas formas não virar duas pessoas nos totais.
   const [pessoas,setPessoas]=useState([]);
@@ -1594,7 +1764,9 @@ export default function App(){
       if(allMeses.size>0){
         // Chaves ANO-MÊS ordenam corretamente como string. Prefere o mês
         // corrente quando ele já tem dados; senão, o mais recente.
-        const atual=mesAtualKey();
+        // `ofCards` (e não o state, ainda não aplicado) para o dia de
+        // fechamento valer já neste primeiro cálculo.
+        const atual=mesAtualKey(ofCards);
         const ordenados=[...allMeses].sort();
         setMesRef(ordenados.includes(atual)?atual:ordenados[ordenados.length-1]);
       }
@@ -1934,7 +2106,7 @@ export default function App(){
             <h3 style={{fontSize:15,fontWeight:600,margin:0,color:C.text}}>Escolher mês</h3>
             <button onClick={()=>setShowMeses(false)} style={{background:"none",border:"none",cursor:"pointer",color:C.textMuted,fontSize:20}}>✕</button>
           </div>
-          <Btn small onClick={()=>{setMesRef(mesAtualKey());setShowMeses(false);}} style={{marginBottom:12}}>📅 Ir para o mês atual</Btn>
+          <Btn small onClick={()=>{setMesRef(mesAtualKey(ofCartoes));setShowMeses(false);}} style={{marginBottom:12}}>📅 Ir para o mês atual</Btn>
           {anosComDados.length===0&&<p style={{fontSize:13,color:C.textDim}}>Nenhum mês com dados ainda.</p>}
           {anosComDados.map(ano=>(
             <div key={ano} style={{marginBottom:12}}>
@@ -1977,10 +2149,8 @@ export default function App(){
           </p>
           <div style={{overflowX:"auto"}}>
             <table style={{width:"100%",fontSize:12,borderCollapse:"collapse",minWidth:420}}>
-              <thead><tr style={{background:C.surfaceAlt}}>
-                {["Compra","Cartão","Parcela","Valor",""].map(h=><th key={h} style={th}>{h}</th>)}
-              </tr></thead>
-              <tbody>{parcelaMes.itens.map(p=>(
+              <Thead cols={COLS_PARC_MES} sort={sortParcMes} toggle={toggleParcMes}/>
+              <tbody>{ordenarLinhas(parcelaMes.itens,sortParcMes,ACESSORES_PARC_MES).map(p=>(
                 <tr key={p.chave+p.num}>
                   <td style={td}>{p.nome}</td>
                   <td style={{...td,color:C.textDim,whiteSpace:"nowrap"}}>{p.cartao}</td>
@@ -2116,8 +2286,8 @@ export default function App(){
                 {manual.length===0
                   ?<EmptyState icon="💳">Nenhum lançamento manual. Clique em “+ Adicionar”.</EmptyState>
                   :<div style={{overflowX:"auto"}}><table style={{width:"100%",fontSize:12,borderCollapse:"collapse",minWidth:540}}>
-                    <thead><tr style={{background:C.surfaceAlt}}>{["Data","Descrição","Valor","Cartão","Dono","Classificação","Obs",""].map(h=><th key={h} style={th}>{h}</th>)}</tr></thead>
-                    <tbody>{manual.map(r=>(
+                    <Thead cols={COLS_MANUAL} sort={sortManual} toggle={toggleManual}/>
+                    <tbody>{ordenarLinhas(manual,sortManual,ACESSORES_MANUAL).map(r=>(
                       <tr key={r.id}>
                         <td style={td}><input value={r.data} onChange={e=>updM(r.id,"data",e.target.value)} placeholder="dd/mm" style={{...inp,width:65}}/></td>
                         <td style={td}><input value={r.nome} onChange={e=>updM(r.id,"nome",e.target.value)} placeholder="Descrição" style={{...inp,width:110}}/></td>
@@ -2161,8 +2331,8 @@ export default function App(){
             {contas.length===0
               ?<EmptyState icon="🏠">Nenhuma conta lançada em {mesLabel(mesRef)}.</EmptyState>
               :<div style={{overflowX:"auto"}}><table style={{width:"100%",fontSize:12,borderCollapse:"collapse",minWidth:440}}>
-                <thead><tr style={{background:C.surfaceAlt}}>{["Transação","Valor (R$)","Dono","Tipo","Obs",""].map(h=><th key={h} style={th}>{h}</th>)}</tr></thead>
-                <tbody>{contas.map(r=>(
+                <Thead cols={COLS_CONTAS} sort={sortContas} toggle={toggleContas}/>
+                <tbody>{ordenarLinhas(contas,sortContas,ACESSORES_CONTAS).map(r=>(
                   <tr key={r.id}>
                     <td style={td}><input value={r.transacao} onChange={e=>updC(r.id,"transacao",e.target.value)} style={{...inp,width:140}}/></td>
                     <td style={td}><input value={r.valor} onChange={e=>updC(r.id,"valor",e.target.value)} placeholder="0,00" style={{...inp,width:85}}/></td>
@@ -2191,8 +2361,8 @@ export default function App(){
             {invest.length===0
               ?<EmptyState icon="📈">Nenhum aporte em {mesLabel(mesRef)}.</EmptyState>
               :<div style={{overflowX:"auto"}}><table style={{width:"100%",fontSize:12,borderCollapse:"collapse",minWidth:440}}>
-                <thead><tr style={{background:C.surfaceAlt}}>{["Descrição","Valor (R$)","Dono","Onde",""].map(h=><th key={h} style={th}>{h}</th>)}</tr></thead>
-                <tbody>{invest.map(r=>(
+                <Thead cols={COLS_INVEST} sort={sortInvest} toggle={toggleInvest}/>
+                <tbody>{ordenarLinhas(invest,sortInvest,ACESSORES_INVEST).map(r=>(
                   <tr key={r.id}>
                     <td style={td}><input value={r.descricao} onChange={e=>updI(r.id,"descricao",e.target.value)} style={{...inp,width:140}}/></td>
                     <td style={td}><input value={r.valor} onChange={e=>updI(r.id,"valor",e.target.value)} placeholder="0,00" style={{...inp,width:85}}/></td>

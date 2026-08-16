@@ -31,6 +31,28 @@ var ABA_AJUSTES    = 'OF_AJUSTES';
 var JANELA_DIAS_ATRAS = 210;
 var JANELA_DIAS_FRENTE = 90;
 
+/**
+ * Piso do histórico: nenhum mês anterior a este é gravado ou preservado.
+ *
+ * Existe porque a janela de sync alcança 210 dias para trás. Sem o piso, todo
+ * sync ressuscitaria os meses que limparHistorico() acabou de apagar — a
+ * limpeza duraria até a próxima execução do gatilho.
+ *
+ * O piso NÃO corta o futuro: parcelas agendadas para 2027 continuam entrando,
+ * porque são elas que fazem a aba Parcelas projetar.
+ *
+ * '' (vazio) desliga o piso e volta a guardar todo o histórico.
+ */
+var MES_MINIMO = '2026-08';
+
+/** true se `mesRef` é anterior ao piso. Formato ANO-MÊS ordena como texto. */
+function _antesDoPiso(mesRef) {
+  if (!MES_MINIMO) return false;
+  var m = String(mesRef || '').trim();
+  if (!/^\d{4}-\d{2}$/.test(m)) return false;   // não entendeu: preserva
+  return m < MES_MINIMO;
+}
+
 // Cabeçalhos. A ORDEM É CONTRATO — o App.jsx lê por posição de coluna.
 // `tipo`: COMPRA | PAGAMENTO | ESTORNO. O banco não soma o pagamento da fatura
 // no total, então o app precisa distinguir para bater o valor.

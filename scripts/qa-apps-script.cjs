@@ -368,6 +368,34 @@ console.log('=== 10. _horasSync ===');
   delete props.HORAS_SYNC;
 }
 
+// ── Piso do histórico ────────────────────────────────────────────────────────
+console.log('\n=== _antesDoPiso (MES_MINIMO) ===');
+{
+  eq('MES_MINIMO está definido', typeof sandbox.MES_MINIMO, 'string');
+  const AP = sandbox._antesDoPiso;
+
+  ok('mês anterior ao piso é cortado', AP('2026-05') === true);
+  ok('o próprio mês do piso fica', AP(sandbox.MES_MINIMO) === false);
+  ok('mês posterior fica', AP('2026-09') === false);
+  // O futuro NÃO pode ser cortado: são as parcelas agendadas que fazem a aba
+  // Parcelas projetar.
+  ok('parcela de 2027 continua entrando', AP('2027-03') === false);
+  ok('ano anterior é cortado', AP('2025-12') === true);
+
+  // Preservar o que não se entende é a regra em toda a base: nunca destruir
+  // silenciosamente uma linha por não saber lê-la.
+  ok('mês vazio é preservado', AP('') === false);
+  ok('null é preservado', AP(null) === false);
+  ok('formato legado ("MAIO") é preservado aqui', AP('MAIO') === false);
+  ok('lixo é preservado', AP('sei lá') === false);
+
+  // Com o piso desligado, nada é cortado — é a saída para voltar atrás.
+  const salvo = sandbox.MES_MINIMO;
+  sandbox.MES_MINIMO = '';
+  ok('piso vazio desliga o corte', sandbox._antesDoPiso('2020-01') === false);
+  sandbox.MES_MINIMO = salvo;
+}
+
 console.log('\n' + '='.repeat(52));
 console.log('RESULTADO: ' + passes + ' passaram, ' + falhas + ' falharam');
 console.log('='.repeat(52));
