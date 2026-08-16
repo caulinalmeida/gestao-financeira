@@ -69,20 +69,27 @@ O app faz `clear + append` total do que é dele; o Apps Script faz o mesmo do qu
 
 | Aba | Escritor |
 |---|---|
-| `RENDA_DESPESAS`, `CARTAO_CREDITO`, `INVESTIMENTOS`, `DICIONARIO`, `OF_AJUSTES` | **o app** |
+| `RENDA_DESPESAS`, `CARTAO_CREDITO`, `INVESTIMENTOS`, `DICIONARIO`, `OF_AJUSTES`, `PESSOAS`, `CHECKLIST_PAGO` | **o app** |
 | `OF_TRANSACOES`, `OF_CARTOES`, `OF_FATURAS`, `OF_STATUS` | **o Apps Script** |
 
 Exceção controlada e única: a chave `pedido_sync` em `OF_STATUS` é escrita pelo app (botão "Atualizar agora") e lida/limpa pelo Apps Script.
 
-`OF_AJUSTES` é escrita pelo app mas **criada** pelo Apps Script (`garantirAbas()`), porque o app só sabe fazer clear/append — não sabe criar aba.
+`OF_AJUSTES`, `PESSOAS` e `CHECKLIST_PAGO` são escritas pelo app mas **criadas** pelo Apps Script (`garantirAbas()`), porque o app só sabe fazer clear/append — não sabe criar aba.
+
+### Frescor: duas idades diferentes
+
+`sincronizarAgora()` lê o que o **Pluggy já tem em cache**. Se o Pluggy não foi ao banco hoje, a compra de hoje não existe para nós por mais que se sincronize. `atualizarDoBancoESincronizar()` faz `PATCH /items/{id}`, que é o que manda o Pluggy ao banco — fica manual porque forçar todo dia gasta a conexão, e conector com MFA pode parar em `WAITING_USER_INPUT`. A faixa do app mostra as duas idades separadas.
+
+> Meu Pluggy (conector 200) recusa o PATCH com `400 MeuPluggy item cant be updated`. Nesse conector a atualização é sempre no ritmo do próprio Pluggy; só o aviso de "banco lido há X" resta.
 
 ### Como o Apps Script deriva o mês da transação
 
 Precedência, verificada contra dados reais do Itaú (fecha dia 3, vence dia 10):
 
 1. **BILL** — transação `POSTED` tem `billId`; o mês vem do `dueDate` da fatura. É a fonte mais confiável.
-2. **CICLO** — sem bill, calcula pelo dia de fechamento. Compra **no** dia do fechamento já cai na fatura seguinte (`>=`, não `>`).
-3. **FORECAST/ESTIMADO** — último recurso.
+2. **AGENDADA** — parcela futura. O banco a entrega datada com o **vencimento da fatura** em que vai cair, não com a data da compra; então o mês é o da própria data, sem passar pelo ciclo. Exige as duas condições: ser parcela **e** ter data no futuro.
+3. **CICLO** — compra normal, calculada pelo dia de fechamento. Compra **no** dia do fechamento já cai na fatura seguinte (`>=`, não `>`).
+4. **FORECAST/ESTIMADO** — último recurso.
 
 `billForecastDate` do Pluggy usa uma convenção de mês **diferente** do `dueDate` — misturar os dois empurra as compras da fatura aberta um mês para trás. Não usar.
 
@@ -97,10 +104,15 @@ O app grava `pedido_sync = <timestamp>` em `OF_STATUS`; um gatilho de 5 min do A
 ## Regras de negócio (IMPORTANTE — não alterar sem confirmar com o usuário)
 
 ### Pessoas e divisão de despesas
-- Só existem duas pessoas: **Caulin** e **Luanna**
-- Campo "Dono" em qualquer lançamento pode ser: `Caulin`, `Luanna`, ou `Dividido`
-- `Dividido` = o valor é dividido por 2, metade para cada pessoa
-- Essa regra se aplica a: contas, cartão de crédito, investimentos — tudo
+- O casal é fixo: **Caulin** e **Luanna** (constante `CASAL`)
+- O campo "Dono" guarda os **participantes separados por `+`**, então terceiros cabem sem mudar coluna nenhuma:
+  - `Caulin` → 100% dele
+  - `Dividido` → apelido histórico de `Caulin+Luanna`, ÷2. **Continua sendo gravado assim**, para o histórico ler igual
+  - `Rafael` → 100% do terceiro, vira "a receber"
+  - `Caulin+Rafael` → ÷2 · `Caulin+Luanna+Rafael` → ÷3
+- `participantes()` e `valorDe()` são o único ponto onde o rateio acontece — a soma das partes sempre fecha o total
+- Terceiros vêm da aba `PESSOAS` (cadastro), para o mesmo nome escrito de duas formas não virar duas pessoas nos totais
+- No checklist, terceiro **não** vira coluna: sai das despesas do casal e aparece no card "A receber"
 
 ### Categorias de lançamento
 - **RENDA** — só aparece no cálculo de renda, nunca em despesas
@@ -134,6 +146,7 @@ Estrutura obrigatória, não simplificar:
 
 ### Aba Parcelas
 Projeta as parcelas futuras a partir de `OF_TRANSACOES`, **sem armazenar nada novo**.
+- **O Itaú carimba o número da parcela na descrição** (`SAMSUNG NO ITAU 06/21`). `semSufixoParcela()` remove antes de qualquer agrupamento — sem isso cada parcela vira uma compra distinta e a projeção multiplica em cascata. Também impedia o dicionário de aprender parcelada, porque a chave mudava todo mês.
 - A projeção ancora na parcela conhecida de **maior número** e projeta uma por mês a partir dela
 - **Dedup obrigatório:** alguns bancos lançam todas as parcelas de uma vez. Como as reais já estão na lista, a âncora é a última e nada é projetado por cima — senão contaria dobrado.
 - A chave da compra arredonda o valor total para reais inteiros de propósito: R$ 100 em 3x vira 33,34 + 33,33 + 33,33, e o centavo não pode quebrar o agrupamento
@@ -207,7 +220,15 @@ account_id | item_id | nome | ultimos_digitos | limite | fechamento | vencimento
 account_id | mes_ref | vencimento | fechamento | total_banco | atualizado_em
 ```
 
-**OF_STATUS** — chave/valor: `ultimo_sync`, `ultimo_erro`, `item_<id>_status`, `pedido_sync`
+**OF_STATUS** — chave/valor: `ultimo_sync`, `ultimo_erro`, `item_<id>_status`, `pedido_sync`, `pluggy_atualizado_em`, `item_<id>_pluggy_em`
+
+**PESSOAS** (terceiros que usam o cartão) — uma coluna: `nome`
+
+**CHECKLIST_PAGO** (o que já foi marcado como pago)
+```
+mes_ref | chave
+```
+A `chave` vem do **conteúdo** da linha, não do id — contas e investimentos recebem `uid()` novo a cada carregamento, então persistir por id não sobreviveria ao F5. Editar valor ou descrição desmarca o pago, o que é o comportamento certo: virou outro lançamento.
 
 ### Como o sync funciona
 - Toda alteração no app dispara `syncAll()` (ou `syncAjustes()`) com debounce de 1200ms
@@ -219,7 +240,9 @@ account_id | mes_ref | vencimento | fechamento | total_banco | atualizado_em
 
 | Função | O que faz |
 |---|---|
-| `garantirAbas()` | Cria as abas OF_* que faltarem, com cabeçalho |
+| `garantirAbas()` | Cria as abas que faltarem, com cabeçalho |
+| `atualizarDoBancoESincronizar()` | Força o Pluggy a ir ao banco e depois sincroniza |
+| `investigarParcelas()` | Agrupa as compras parceladas e diagnostica projeção errada |
 | `testarConexao()` | Valida credenciais e lista os cartões conectados |
 | `sincronizarAgora()` | Sync completo, na hora |
 | `conferirFatura()` | Compara nosso total com o do banco, mês a mês |
@@ -243,6 +266,9 @@ O botão Run do Apps Script **não passa parâmetros** — por isso existe `Atal
 10. **`OF_AJUSTES` não era criada por ninguém** — o app não sabe criar aba, e o Apps Script não conhecia o nome dela. Toda decisão do usuário falhava ao gravar. Resolvido com `garantirAbas()`.
 11. **Leitura das abas OF_* em `Promise.all`** — uma aba faltando derrubava o lote inteiro e o Open Finance sumia da tela sem erro visível. Agora cada aba é lida isoladamente.
 12. **`sessionStorage` bloqueado / falha de gravação eram silenciosas** — hoje aparecem como "⚠️ NÃO salvo" e vão para o console.
+13. **Número da parcela dentro da descrição** — quebrava o agrupamento por descrição e o dicionário. Resolvido com `semSufixoParcela()`.
+14. **Parcela futura empurrada um mês** — vem datada com o vencimento da fatura, e o CICLO tratava como data de compra. Resolvido com a regra AGENDADA.
+15. **"Pago" sumia no F5 e vazava entre meses** — era `useState` puro com chave sem mês. Resolvido com `CHECKLIST_PAGO` e chave derivada do conteúdo.
 
 ## Estilo visual (design system informal)
 
@@ -278,6 +304,8 @@ Estilo geral: cards com sombra sutil, bordas arredondadas (8-14px), tipografia d
 
 - Otimizar sync para update incremental em vez de clear+append total (importante se o histórico crescer muito)
 - Gráfico de comparativo mês a mês
+- Layout mobile: as tabelas ainda rolam na horizontal (decisão: amadurecer o desktop primeiro)
+- Ambiente de staging — hoje se edita a planilha de produção direto
 - Total de gastos com tag "Férias/" separado
 - Adicionar a Luanna como segunda usuária de teste no Google Cloud
 - Conectar cartões de outros bancos no Meu Pluggy (hoje só Itaú)

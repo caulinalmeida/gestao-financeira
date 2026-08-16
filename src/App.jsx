@@ -1599,6 +1599,36 @@ export default function App(){
   // Parcelas futuras: derivadas, não armazenadas. Ver projetarParcelas.
   const proj=projetarParcelas(ofTransacoes,ajustes,dict,ofCartoes,mesRef,12);
 
+  /**
+   * Previsão do mês que vem, com o que já dá para saber hoje.
+   *
+   * Três fontes, sem sobreposição:
+   *   1. o que o banco já lançou para o mês seguinte (fatura em aberto)
+   *   2. as parcelas que ainda NÃO apareceram, mas vão — só as projetadas,
+   *      porque as reais já entraram no item 1 e contariam dobrado
+   *   3. despesa fixa e investimento deste mês, assumidos recorrentes
+   *
+   * O item 3 é uma suposição, e por isso aparece rotulado como tal na tela.
+   */
+  const mesSeguinte=mesProximo(mesRef);
+  const previsao=(()=>{
+    const jaLancado=mergeFatura(ofTransacoes,ajustes,dict,ofCartoes,
+      {mesRef:mesSeguinte,status:"PENDING",mostrarIgnoradas:false,mostrarPagamentos:false});
+    const cartaoLancado=totalFatura(jaLancado);
+    const projNaoLancadas=(proj.porMes.find(m=>m.mesRef===mesSeguinte)?.itens||[])
+      .filter(p=>p.projetada);
+    const cartaoProjetado=projNaoLancadas.reduce((a,p)=>a+p.valor,0);
+    const fixas=contas.filter(r=>r.tipo==="DESPESA FIXA");
+    const totalFixas=fixas.reduce((a,r)=>a+parseBRL(r.valor),0);
+    const totalInvest=invest.reduce((a,r)=>a+parseBRL(r.valor),0);
+    return{
+      mesRef:mesSeguinte,cartaoLancado,cartaoProjetado,totalFixas,totalInvest,
+      qtdLancado:jaLancado.length,qtdProjetada:projNaoLancadas.length,
+      qtdFixas:fixas.length,
+      total:cartaoLancado+cartaoProjetado+totalFixas+totalInvest,
+    };
+  })();
+
   const updF=(id,f,v)=>withSync(mesRef,"fatura",c=>({fatura:c.fatura.map(r=>r.id===id?{...r,[f]:v}:r)}));
   const rmF=id=>withSync(mesRef,"fatura",c=>({fatura:c.fatura.filter(r=>r.id!==id)}));
 
@@ -2163,6 +2193,49 @@ export default function App(){
                   );
                 })}
               </div>
+
+              {previsao.total>0&&(
+                <div style={{...card,background:C.surfaceAlt,border:`1px solid ${C.border}`}}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",
+                    gap:10,flexWrap:"wrap",marginBottom:8}}>
+                    <span style={{fontSize:13,fontWeight:600,color:C.text}}>
+                      🔮 Previsão de {mesLabel(previsao.mesRef)}
+                    </span>
+                    <strong style={{fontSize:17,color:C.text,fontVariantNumeric:"tabular-nums"}}>
+                      {fmtBRL(previsao.total)}
+                    </strong>
+                  </div>
+                  <div style={{display:"grid",
+                    gridTemplateColumns:isMobile?"1fr":"repeat(auto-fit,minmax(150px,1fr))",gap:8}}>
+                    {[
+                      {rot:"Fatura já lançada",v:previsao.cartaoLancado,
+                       sub:`${previsao.qtdLancado} lançamento${previsao.qtdLancado===1?"":"s"}`,firme:true},
+                      {rot:"Parcelas a cair",v:previsao.cartaoProjetado,
+                       sub:`${previsao.qtdProjetada} projetada${previsao.qtdProjetada===1?"":"s"}`,firme:false},
+                      {rot:"Despesas fixas",v:previsao.totalFixas,
+                       sub:`${previsao.qtdFixas} conta${previsao.qtdFixas===1?"":"s"} · repetindo este mês`,firme:false},
+                      {rot:"Investimentos",v:previsao.totalInvest,
+                       sub:"repetindo este mês",firme:false},
+                    ].filter(x=>x.v>0).map(x=>(
+                      <div key={x.rot} style={{padding:"8px 10px",borderRadius:8,
+                        background:C.surface,border:`1px solid ${C.borderSoft}`}}>
+                        <div style={{fontSize:10,color:C.textMuted,textTransform:"uppercase",
+                          letterSpacing:"0.06em",fontWeight:700}}>
+                          {x.rot}{!x.firme&&<span style={{opacity:0.7}}> ~</span>}
+                        </div>
+                        <div style={{fontSize:15,fontWeight:700,color:C.text,marginTop:3,
+                          fontVariantNumeric:"tabular-nums"}}>{fmtBRL(x.v)}</div>
+                        <div style={{fontSize:10,color:C.textMuted,marginTop:2}}>{x.sub}</div>
+                      </div>
+                    ))}
+                  </div>
+                  <p style={{fontSize:11,color:C.textMuted,margin:"10px 0 0",lineHeight:1.5}}>
+                    O que tem <strong>~</strong> é estimativa: parcela que ainda não
+                    apareceu na fatura, e conta fixa/investimento assumidos iguais
+                    aos deste mês. A fatura já lançada é dado do banco.
+                  </p>
+                </div>
+              )}
 
               {aReceber.length>0&&(
                 <div style={{...card,background:C.blue50,border:`1px solid ${C.blue100}`}}>
