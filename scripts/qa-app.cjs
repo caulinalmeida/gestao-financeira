@@ -649,6 +649,49 @@ console.log('\n=== 14. ordenarLinhas (clique no cabeçalho) ===');
      ['of-03-jul', 'legado-20-jul', 'of-agosto']);
 }
 
+// ── 14c. Todo rótulo de coluna tem acessor ───────────────────────────────────
+// Uma coluna sem acessor não quebra nada visível: ela só não ordena. É o tipo
+// de erro que sobrevive a qualquer teste de comportamento, então é verificado
+// confrontando as duas listas direto no fonte.
+console.log('\n=== 14c. COLS_* × ACESSORES_* ===');
+{
+  const pares = [
+    ['COLS_FATURA', 'ACESSORES_FATURA'],
+    ['COLS_MANUAL', 'ACESSORES_MANUAL'],
+    ['COLS_CONTAS', 'ACESSORES_CONTAS'],
+    ['COLS_INVEST', 'ACESSORES_INVEST'],
+    ['COLS_PARC_MES', 'ACESSORES_PARC_MES'],
+    ['COLS_COMPRAS', 'ACESSORES_COMPRAS'],
+  ];
+
+  const ctx2 = {};
+  vm.createContext(ctx2);
+  vm.runInContext(pedacos.join('\n'), ctx2);   // chaveData, parseBRL, parseDataFlex…
+
+  for (const [nomeCols, nomeAc] of pares) {
+    const lCols = extrairLinha('const ' + nomeCols + '=');
+    const bAc = extrair('const ' + nomeAc + '=');
+    if (!lCols || !bAc) { ok(nomeCols + ' e ' + nomeAc + ' encontrados', false); continue; }
+
+    // `const` no vm fica no escopo léxico e não vira propriedade do contexto;
+    // `var` vira. Por isso a troca antes de executar.
+    vm.runInContext(lCols.replace(/^const /, 'var ') + '\n' +
+                    bAc.replace(/^const /, 'var ') + ';', ctx2);
+    const cols = ctx2[nomeCols].filter(Boolean);   // "" = coluna de ações
+    const ac = ctx2[nomeAc];
+
+    const semAcessor = cols.filter(c => typeof ac[c] !== 'function');
+    ok(nomeCols + ': toda coluna ordena', semAcessor.length === 0,
+       'sem acessor: ' + semAcessor.join(', '));
+
+    // O inverso também importa: acessor órfão é rótulo que mudou e ninguém
+    // atualizou dos dois lados.
+    const orfaos = Object.keys(ac).filter(k => cols.indexOf(k) === -1);
+    ok(nomeAc + ': nenhum acessor órfão', orfaos.length === 0,
+       'sobrando: ' + orfaos.join(', '));
+  }
+}
+
 // ── 15. Mês atual = fatura aberta, não o calendário ──────────────────────────
 console.log('\n=== 15. mesFaturaDe / mesAtualKey ===');
 {
