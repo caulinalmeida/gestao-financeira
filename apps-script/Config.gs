@@ -45,11 +45,36 @@ var JANELA_DIAS_FRENTE = 90;
  */
 var MES_MINIMO = '2026-08';
 
+/**
+ * Normaliza o que está na célula de mês para 'ANO-MÊS', ou '' se não der.
+ *
+ * `getValues()` não devolve só texto: uma célula com "2026-08" pode ter sido
+ * interpretada pelo Sheets como DATA, e aí chega como objeto Date. As duas
+ * formas viram a mesma string no log, então o bug fica invisível — foi o que
+ * fez a primeira simulação de limpeza marcar 100% das linhas como ilegíveis.
+ *
+ * Nos getters locais e não nos UTC de propósito: o Apps Script constrói a Date
+ * no fuso da planilha, então getMonth() já devolve o mês que aparece na tela.
+ * Com getUTCMonth(), um fuso negativo como o nosso jogaria 01/08 00:00 para
+ * 31/07 e o mês mudaria — justamente numa operação que apaga linhas.
+ */
+function _mesRefTexto(bruto) {
+  // toString e não instanceof: o QA carrega os .gs num sandbox com outro realm,
+  // onde `instanceof Date` é falso para uma Date legítima.
+  var ehData = Object.prototype.toString.call(bruto) === '[object Date]';
+  if (ehData && !isNaN(bruto.getTime())) {
+    var mm = bruto.getMonth() + 1;
+    return bruto.getFullYear() + '-' + (mm < 10 ? '0' : '') + mm;
+  }
+  var s = String(bruto == null ? '' : bruto).trim();
+  return /^\d{4}-\d{2}$/.test(s) ? s : '';
+}
+
 /** true se `mesRef` é anterior ao piso. Formato ANO-MÊS ordena como texto. */
 function _antesDoPiso(mesRef) {
   if (!MES_MINIMO) return false;
-  var m = String(mesRef || '').trim();
-  if (!/^\d{4}-\d{2}$/.test(m)) return false;   // não entendeu: preserva
+  var m = _mesRefTexto(mesRef);
+  if (!m) return false;                         // não entendeu: preserva
   return m < MES_MINIMO;
 }
 

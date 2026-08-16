@@ -35,6 +35,57 @@
 function simularLimpezaHistorico() { return _limpeza(true); }
 function limparHistorico()         { return _limpeza(false); }
 
+/**
+ * O que está REALMENTE gravado na coluna de mês, célula por célula.
+ *
+ * Existe porque a primeira simulação deu "mês ilegível" em 100% das linhas, em
+ * quatro abas com escritores diferentes. Antes de mudar o parser, é preciso ver
+ * o tipo do valor: string "2026-08" e Date(2026-08-01) chegam iguais no log e
+ * são coisas completamente diferentes para o código.
+ */
+function inspecionarMesRef() {
+  var ss = SpreadsheetApp.getActive();
+  var log = [];
+  function p(s) { log.push(s); Logger.log(s); }
+
+  p('=== O QUE HÁ NA COLUNA DE MÊS ===');
+  p('');
+
+  _abasComMes().forEach(function (cfg) {
+    var s = ss.getSheetByName(cfg.nome);
+    if (!s) { p('•  ' + cfg.nome + ': não existe'); return; }
+    var linhas = lerLinhas(s, cfg.cols);
+    if (!linhas.length) { p('•  ' + cfg.nome + ': vazia'); return; }
+
+    p('•  ' + cfg.nome + '  (coluna ' + (cfg.col + 1) + ', ' + linhas.length + ' linhas)');
+    linhas.slice(0, 3).forEach(function (l, i) {
+      var v = l[cfg.col];
+      var tipo = Object.prototype.toString.call(v);
+      var extra = '';
+      if (Object.prototype.toString.call(v) === '[object Date]') {
+        // Se for Date, é isto que decide o mês — e o dia revela se houve
+        // deslocamento de fuso ao gravar.
+        extra = '  → ano=' + v.getFullYear() + ' mês=' + (v.getMonth() + 1) +
+                ' dia=' + v.getDate() + '  ISO=' + v.toISOString();
+      } else if (typeof v === 'string') {
+        extra = '  → comprimento=' + v.length +
+                '  códigos=[' + v.split('').slice(0, 12).map(function (c) {
+                  return c.charCodeAt(0);
+                }).join(',') + ']';
+      }
+      p('     linha ' + (i + 2) + ': ' + tipo + '  valor=' + JSON.stringify(String(v)) + extra);
+      p('       _mesDaLinha() devolve: ' + JSON.stringify(_mesDaLinha(v)));
+    });
+    p('');
+  });
+
+  p('O que procurar:');
+  p('  • [object Date]   → o Sheets converteu o texto em data ao gravar');
+  p('  • [object String] com código 8203, 160 ou similar → caractere invisível');
+  p('  • [object Number] → virou número de série');
+  return log.join('\n');
+}
+
 // Abas com mês: nome → índice (base 0) da coluna de mes_ref.
 function _abasComMes() {
   return [
@@ -50,13 +101,16 @@ function _abasComMes() {
 }
 
 /**
- * Normaliza o mês para comparar. Aceita o formato legado ("MAIO") porque pode
- * ter sobrado linha não migrada — e essa é justamente a sujeira a remover.
+ * Normaliza o mês para comparar.
+ *
+ * Delega o caso normal (texto ANO-MÊS ou Date) a _mesRefTexto, e só depois
+ * tenta o formato legado ("MAIO"), que pode ter sobrado de linha não migrada —
+ * e é justamente sujeira a remover.
  */
 function _mesDaLinha(bruto) {
-  var s = String(bruto == null ? '' : bruto).trim().toUpperCase();
-  if (/^\d{4}-\d{2}$/.test(s)) return s;
-  var r = _converterMes(s);          // reaproveita a tabela de Migracao.gs
+  var m = _mesRefTexto(bruto);
+  if (m) return m;
+  var r = _converterMes(String(bruto == null ? '' : bruto).trim().toUpperCase());
   return r.novo || '';
 }
 
@@ -84,14 +138,23 @@ function _limpeza(simular) {
     var linhas = lerLinhas(s, cfg.cols);
     if (!linhas.length) { p('•  ' + cfg.nome + ': vazia'); return; }
 
-    var porMes = {}, semMes = 0;
+    var porMes = {}, semMes = 0, amostras = [];
     var mantidas = linhas.filter(function (l) {
       // Linha totalmente vazia não conta como dado.
       var temAlgo = l.some(function (v) { return String(v || '').trim() !== ''; });
       if (!temAlgo) return false;
 
       var m = _mesDaLinha(l[cfg.col]);
-      if (!m) { semMes++; return true; }   // não entendeu o mês: preserva
+      if (!m) {
+        semMes++;
+        // Amostra do valor cru: "ilegível" sem mostrar o que era obrigava a
+        // rodar um diagnóstico à parte para descobrir o porquê.
+        if (amostras.length < 3) {
+          var v = l[cfg.col];
+          amostras.push(Object.prototype.toString.call(v) + ' ' + JSON.stringify(String(v)));
+        }
+        return true;                       // não entendeu o mês: preserva
+      }
       if (m >= MES_MINIMO) return true;
       porMes[m] = (porMes[m] || 0) + 1;
       return false;
@@ -103,7 +166,11 @@ function _limpeza(simular) {
     Object.keys(porMes).sort().forEach(function (m) {
       p('      ' + m + ': ' + porMes[m]);
     });
-    if (semMes) p('      ⚠️  ' + semMes + ' linha(s) com mês ilegível — MANTIDAS');
+    if (semMes) {
+      p('      ⚠️  ' + semMes + ' linha(s) com mês ilegível — MANTIDAS');
+      amostras.forEach(function (a) { p('          amostra: ' + a); });
+      p('          (rode inspecionarMesRef() para o detalhe)');
+    }
 
     if (!simular && removidas > 0) {
       escreverLinhas(s, mantidas, cfg.cols);

@@ -396,6 +396,45 @@ console.log('\n=== _antesDoPiso (MES_MINIMO) ===');
   sandbox.MES_MINIMO = salvo;
 }
 
+// ── Célula de mês que o Sheets converteu em data ─────────────────────────────
+console.log('\n=== _mesRefTexto (getValues devolve Date, não só texto) ===');
+{
+  const MT = sandbox._mesRefTexto;
+  eq('texto ANO-MÊS passa direto', MT('2026-08'), '2026-08');
+  eq('espaços em volta não atrapalham', MT('  2026-08  '), '2026-08');
+
+  // O caso que fez a simulação marcar 100% das linhas como ilegíveis.
+  eq('Date de agosto vira 2026-08', MT(new Date(2026, 7, 1)), '2026-08');
+  eq('Date de dezembro tem dois dígitos', MT(new Date(2026, 11, 1)), '2026-12');
+  eq('Date de janeiro tem zero à esquerda', MT(new Date(2027, 0, 1)), '2027-01');
+  // Meia-noite local de 01/08: com getUTCMonth num fuso negativo viraria julho.
+  eq('01/08 à meia-noite continua sendo agosto',
+     MT(new Date(2026, 7, 1, 0, 0, 0)), '2026-08');
+  eq('último dia do mês não vaza para o seguinte',
+     MT(new Date(2026, 7, 31, 23, 59, 59)), '2026-08');
+
+  eq('Date inválida é ilegível', MT(new Date('xxx')), '');
+  eq('vazio é ilegível', MT(''), '');
+  eq('null é ilegível', MT(null), '');
+  eq('formato legado não é ANO-MÊS', MT('MAIO'), '');
+  eq('data completa não é mês', MT('2026-08-16'), '');
+
+  // O piso precisa enxergar a Date, senão não corta nada — era o efeito real.
+  ok('piso corta Date anterior ao mínimo',
+     sandbox._antesDoPiso(new Date(2026, 4, 1)) === true);
+  ok('piso mantém Date do mês mínimo',
+     sandbox._antesDoPiso(new Date(2026, 7, 1)) === false);
+  ok('piso mantém Date futura',
+     sandbox._antesDoPiso(new Date(2027, 2, 1)) === false);
+
+  // _mesDaLinha some as duas coisas: Date, texto novo e texto legado.
+  const ML = sandbox._mesDaLinha;
+  eq('_mesDaLinha entende Date', ML(new Date(2026, 7, 1)), '2026-08');
+  eq('_mesDaLinha entende ANO-MÊS', ML('2026-09'), '2026-09');
+  eq('_mesDaLinha entende o legado', ML('MAIO'), '2026-05');
+  eq('_mesDaLinha devolve vazio no que não reconhece', ML('sei lá'), '');
+}
+
 console.log('\n' + '='.repeat(52));
 console.log('RESULTADO: ' + passes + ' passaram, ' + falhas + ' falharam');
 console.log('='.repeat(52));
