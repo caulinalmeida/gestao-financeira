@@ -409,6 +409,59 @@ console.log('\n=== 11. semSufixoParcela ===');
      Math.round(r11.compras[0].falta * 100) / 100, Math.round(14 * 53.8 * 100) / 100);
 }
 
+// ── 11b. Compra quitada / antecipada ────────────────────────────────────────
+console.log('\n=== 11b. antecipação: não projetar parcela que não vem mais ===');
+{
+  const cartoesQ = [{ accountId: 'acc-1', nome: 'Black', ultimos: '3216' }];
+  const parc = (nome, n, tot, mes, valor) => ({
+    id: `${nome}-${n}`, accountId: 'acc-1', natureza: 'COMPRA', status: 'POSTED',
+    mesRef: mes, nome, valor, parcelaNum: n, parcelaTotal: tot, valorTotal: 0,
+    fingerprint: `${nome}|${n}`,
+  });
+
+  // Caso real: SAMSUNG 21x com as parcelas 09..16 lançadas juntas em agosto
+  // (antecipação) e nada de setembro em diante. O AIRBNB, vivo, prova que o
+  // banco está agendando o futuro.
+  const samsung = [
+    parc('SAMSUNG NO ITAU', 6, 21, '2026-05', 53.8),
+    parc('SAMSUNG NO ITAU', 7, 21, '2026-06', 53.8),
+    parc('SAMSUNG NO ITAU', 8, 21, '2026-07', 53.8),
+  ];
+  for (let n = 9; n <= 16; n++) samsung.push(parc('SAMSUNG NO ITAU', n, 21, '2026-08', 53.8));
+  const airbnb = [
+    parc('AIRBNB * HMP3QS4Y5', 1, 6, '2026-08', 795),
+    parc('AIRBNB * HMP3QS4Y5', 2, 6, '2026-09', 795),
+    parc('AIRBNB * HMP3QS4Y5', 3, 6, '2026-10', 795),
+  ];
+  const r = ctx.projetarParcelas([...samsung, ...airbnb], {}, [], cartoesQ, '2026-09', 12);
+  const nomes = r.compras.map(c => c.nome);
+  ok('SAMSUNG quitado some da lista', !nomes.includes('SAMSUNG NO ITAU'),
+     'ficou: ' + nomes.join(' | '));
+  ok('AIRBNB vivo continua', nomes.includes('AIRBNB * HMP3QS4Y5'));
+  const air = r.compras.find(c => c.nome === 'AIRBNB * HMP3QS4Y5');
+  eq('  e projeta as 3 que faltam (04,05,06)', air.projetadas, 3);
+  eq('  restam 5 de set/26 em diante', air.restantes, 5);
+  ok('nenhuma parcela do SAMSUNG entra no comprometido',
+     r.porMes.every(m => m.itens.every(i => i.nome !== 'SAMSUNG NO ITAU')));
+
+  // A trava: sem nada agendado no futuro, ninguém é dado como quitado.
+  const soPassado = ctx.projetarParcelas(samsung, {}, [], cartoesQ, '2026-09', 12);
+  eq('sem agenda futura nenhuma, o SAMSUNG volta a ser projetado',
+     soPassado.compras.length, 1);
+  eq('  projetando 17..21', soPassado.compras[0].projetadas, 5);
+
+  // Compra quitada exatamente no mês-base ainda aparece (é o "termina agora").
+  const quitaAgora = [
+    parc('LOJA Z', 1, 2, '2026-08', 50),
+    parc('LOJA Z', 2, 2, '2026-09', 50),
+    ...airbnb,
+  ];
+  const rq = ctx.projetarParcelas(quitaAgora, {}, [], cartoesQ, '2026-09', 12);
+  const z = rq.compras.find(c => c.nome === 'LOJA Z');
+  ok('última parcela no mês-base não é confundida com quitada', !!z);
+  ok('  e é marcada como terminando agora', z && z.terminaEsteMes === true);
+}
+
 // ── 12. Rateio com terceiros ────────────────────────────────────────────────
 console.log('\n=== 12. participantes / valorDe ===');
 {

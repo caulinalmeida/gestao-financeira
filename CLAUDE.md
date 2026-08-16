@@ -141,7 +141,7 @@ Estrutura obrigatória, não simplificar:
 - Dentro de cada coluna: Investimentos → Contas → Cartão (com fixos/parcelados/variáveis agrupados por total, clicável)
 - Todo item tem checkbox de "pago". Marcar/desmarcar atualiza o "Saldo Caulin" em tempo real (Saldo = Renda Caulin − tudo que Caulin marcou como pago)
 - Checkboxes de pagamento existem **somente no Checklist**, nunca nas abas de Fatura/Parcelas/Contas/Investimentos (isso já foi pedido explicitamente para ser removido de lá)
-- Usa a fatura **FECHADA**, nunca a aberta — é o que efetivamente se vai pagar
+- Usa a fatura **FECHADA** — é o que efetivamente se vai pagar. **Exceção:** se o mês ainda não tem nenhuma transação `POSTED`, usa a **aberta**, com aviso na tela. Sem isso a seção Cartão do mês corrente ficava vazia, inútil justamente no mês que se está planejando. Mês já fechado continua idêntico.
 - Botão final "Copiar resumo para WhatsApp" — gera um texto formatado e copia pro clipboard
 
 ### Aba Parcelas
@@ -149,6 +149,7 @@ Projeta as parcelas futuras a partir de `OF_TRANSACOES`, **sem armazenar nada no
 - **O Itaú carimba o número da parcela na descrição** (`SAMSUNG NO ITAU 06/21`). `semSufixoParcela()` remove antes de qualquer agrupamento — sem isso cada parcela vira uma compra distinta e a projeção multiplica em cascata. Também impedia o dicionário de aprender parcelada, porque a chave mudava todo mês.
 - A projeção ancora na parcela conhecida de **maior número** e projeta uma por mês a partir dela
 - **Dedup obrigatório:** alguns bancos lançam todas as parcelas de uma vez. Como as reais já estão na lista, a âncora é a última e nada é projetado por cima — senão contaria dobrado.
+- **Compra quitada/antecipada não é projetada.** O banco agenda as parcelas futuras com antecedência; se ele está agendando (existe alguma parcela de `mesBase` em diante) e uma compra não tem nenhuma daqui para a frente, ela foi liquidada. Caso real: `SAMSUNG NO ITAU` 21x teve as parcelas 09 a 16 lançadas juntas em agosto, com três estornos `DESC ANTECIPA PARCELAS`, e sumiu da fatura. A condição "o banco está agendando" é a trava: num conjunto de dados sem nada futuro, ninguém é dado como quitado por engano.
 - A chave da compra arredonda o valor total para reais inteiros de propósito: R$ 100 em 3x vira 33,34 + 33,33 + 33,33, e o centavo não pode quebrar o agrupamento
 - Transação `ignorada` não compromete nada
 

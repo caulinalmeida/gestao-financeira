@@ -433,7 +433,24 @@ function projetarParcelas(transacoes,ajustes,dict,cartoes,mesBase,horizonte){
     if(!c.dono&&ov?.dono) c.dono=ov.dono;
   });
 
-  // 2. Completa cada compra com as parcelas que faltam.
+  // 2. O banco agenda as parcelas futuras com antecedência — elas chegam
+  // datadas com o vencimento da fatura. Se ele está agendando (existe alguma
+  // parcela de mesBase em diante), então uma compra SEM nenhuma parcela daqui
+  // para a frente foi quitada: antecipada ou liquidada. Projetar aí inventa
+  // parcela que o banco não vai cobrar.
+  //
+  // Caso real: o SAMSUNG NO ITAU 21x teve as parcelas 09 a 16 lançadas juntas
+  // em agosto (com três estornos "DESC ANTECIPA PARCELAS"), e some da fatura
+  // de setembro em diante. Sem esta regra o app projetava 17 a 21.
+  //
+  // A condição de o banco estar agendando é a trava: num conjunto de dados
+  // velho, sem nada futuro, ninguém é dado como quitado por engano.
+  let bancoAgendando=false;
+  compras.forEach(c=>{
+    c.conhecidas.forEach(p=>{ if(p.mesRef>=mesBase) bancoAgendando=true; });
+  });
+
+  // 3. Completa cada compra com as parcelas que faltam.
   const itens=[];
   const resumo=[];
   compras.forEach(c=>{
@@ -447,12 +464,19 @@ function projetarParcelas(transacoes,ajustes,dict,cartoes,mesBase,horizonte){
       proprias.push({chave:c.chave,nome:c.nome,cartao:c.cartao,dono:c.dono,
         num:n,total:c.parcelaTotal,mesRef:p.mesRef,valor:p.valor,projetada:false});
     });
+
+    // Quitada: o banco está agendando parcelas, mas nenhuma é desta compra.
+    const temFuturo=proprias.some(p=>p.mesRef>=mesBase);
+    const quitada=bancoAgendando&&!temFuturo;
+
     // A partir da última conhecida, uma parcela por mês, com o mesmo valor.
-    let mes=ancora.mesRef;
-    for(let n=ultimoNum+1;n<=c.parcelaTotal;n++){
-      mes=mesProximo(mes);
-      proprias.push({chave:c.chave,nome:c.nome,cartao:c.cartao,dono:c.dono,
-        num:n,total:c.parcelaTotal,mesRef:mes,valor:ancora.valor,projetada:true});
+    if(!quitada){
+      let mes=ancora.mesRef;
+      for(let n=ultimoNum+1;n<=c.parcelaTotal;n++){
+        mes=mesProximo(mes);
+        proprias.push({chave:c.chave,nome:c.nome,cartao:c.cartao,dono:c.dono,
+          num:n,total:c.parcelaTotal,mesRef:mes,valor:ancora.valor,projetada:true});
+      }
     }
     itens.push(...proprias);
 
@@ -1590,8 +1614,17 @@ export default function App(){
 
   // O checklist usa a fatura FECHADA e SEMPRE ignora o que foi marcado como
   // ignorado e os pagamentos — independente dos toggles de exibição da tabela.
-  const ofParaChecklist=mergeFatura(ofTransacoes,ajustes,dict,ofCartoes,
+  //
+  // Exceção: enquanto a fatura do mês não fechou não existe nenhuma POSTED, e
+  // o checklist ficava com a seção Cartão vazia — inútil justamente no mês que
+  // se está planejando. Nesse caso usa a aberta, avisando na tela que os
+  // valores ainda podem mudar. Mês fechado continua exatamente como era.
+  const semPosted=mergeFatura(ofTransacoes,ajustes,dict,ofCartoes,
     {mesRef,status:"POSTED",mostrarIgnoradas:false,mostrarPagamentos:false});
+  const ofAbertaChecklist=mergeFatura(ofTransacoes,ajustes,dict,ofCartoes,
+    {mesRef,status:"PENDING",mostrarIgnoradas:false,mostrarPagamentos:false});
+  const checklistEmAberto=semPosted.length===0&&ofAbertaChecklist.length>0;
+  const ofParaChecklist=checklistEmAberto?ofAbertaChecklist:semPosted;
   const totalEmAberto=totalFatura(
     mergeFatura(ofTransacoes,ajustes,dict,ofCartoes,
       {mesRef,status:"PENDING",mostrarIgnoradas:false,mostrarPagamentos:false}));
@@ -2193,6 +2226,17 @@ export default function App(){
                   );
                 })}
               </div>
+
+              {checklistEmAberto&&(
+                <div style={{...card,background:C.amberSoft,border:`1px solid ${C.amber100}`,
+                  padding:"10px 14px"}}>
+                  <div style={{fontSize:12,color:C.amber600,lineHeight:1.6}}>
+                    🔴 <strong>A fatura de {mesLabel(mesRef)} ainda não fechou.</strong>{" "}
+                    O cartão abaixo usa a fatura em aberto, então os valores podem
+                    mudar até o fechamento. Marcar como pago já funciona.
+                  </div>
+                </div>
+              )}
 
               {previsao.total>0&&(
                 <div style={{...card,background:C.surfaceAlt,border:`1px solid ${C.border}`}}>
