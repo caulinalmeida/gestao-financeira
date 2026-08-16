@@ -79,14 +79,23 @@ function pluggyGet(caminho, params) {
  * dispara a visita.
  *
  * ⚠️ ITEM DO MEU PLUGGY RECUSA: devolve 400 "MeuPluggy item cant be updated".
- * Não é bug — forçar a atualização abre a tela de consentimento do banco, que
- * exige alguém autenticando. Nesses casos o único caminho é manual, em
- * https://meu.pluggy.ai/connections/<itemId> → botão Atualizar (~1 min), e
- * depois um sincronizarAgora() aqui.
  *
- * Mantida porque conector comum (fora do Meu Pluggy) aceita: aí o item entra
- * em UPDATING e leva de segundos a minutos. Fica manual de propósito — forçar
- * todo dia sem necessidade só gasta a conexão.
+ * É restrição de AUTORIZAÇÃO, não impedimento técnico. O item pertence à
+ * aplicação Meu Pluggy; nossa clientId é outra aplicação, com permissão de
+ * leitura mas não de escrita sobre ele. Verificado na prática: pelo site do
+ * Meu Pluggy a mesma atualização roda sem pedir senha nenhuma — o widget abre
+ * com o CPF já preenchido e coleta sozinho em ~1 min.
+ *
+ * Caminho manual enquanto isso: https://meu.pluggy.ai/connections/<itemId> →
+ * botão Atualizar, e depois sincronizarAgora() aqui.
+ *
+ * Em aberto: POST /connect_tokens + widget do Pluggy Connect em modo update
+ * poderia embutir esse fluxo no app. Não testado — provavelmente esbarra na
+ * mesma fronteira de aplicação, já que o token sairia da nossa clientId.
+ *
+ * A função fica porque conector fora do Meu Pluggy aceita: aí o item entra em
+ * UPDATING e leva de segundos a minutos. Manual de propósito — forçar todo dia
+ * sem necessidade só gasta a conexão.
  */
 function pluggyAtualizarItem(itemId) {
   var resp = UrlFetchApp.fetch(PLUGGY_API + '/items/' + itemId, {

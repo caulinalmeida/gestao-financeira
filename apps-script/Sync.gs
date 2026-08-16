@@ -369,11 +369,12 @@ function atualizarDoBancoESincronizar() {
 
   if (recusados.length) {
     p('');
-    p('  ℹ️ Item do Meu Pluggy não aceita atualização por API — e não é limitação');
-    p('     nossa: forçar a atualização abre a tela de consentimento do próprio');
-    p('     banco, que exige alguém autenticando. Não dá para automatizar.');
+    p('  ℹ️ Item do Meu Pluggy não aceita atualização por API. É restrição de');
+    p('     autorização: o item pertence à aplicação Meu Pluggy, e a nossa');
+    p('     clientId só tem leitura sobre ele. Pelo site do Meu Pluggy a mesma');
+    p('     atualização roda sem pedir senha, em ~1 min.');
     p('');
-    p('     O caminho é manual, leva ~1 min:');
+    p('     Caminho manual:');
     recusados.forEach(function (id) {
       p('       https://meu.pluggy.ai/connections/' + id + '  → botão Atualizar');
     });

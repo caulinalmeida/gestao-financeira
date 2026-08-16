@@ -95,9 +95,11 @@ mostra a que horas o Pluggy realmente visita — aí dá para alinhar o gatilho.
 
 `sincronizarAgora()` lê o que o **Pluggy já tem em cache**. Se o Pluggy não foi ao banco hoje, a compra de hoje não existe para nós por mais que se sincronize. `atualizarDoBancoESincronizar()` faz `PATCH /items/{id}`, que é o que manda o Pluggy ao banco — fica manual porque forçar todo dia gasta a conexão, e conector com MFA pode parar em `WAITING_USER_INPUT`. A faixa do app mostra as duas idades separadas.
 
-> **Meu Pluggy recusa o PATCH** com `400 MeuPluggy item cant be updated`. Não é limitação da nossa integração: forçar a atualização abre a **tela de consentimento do próprio banco**, que exige alguém autenticando — não dá para automatizar.
+> **Meu Pluggy recusa o PATCH** com `400 MeuPluggy item cant be updated`. É restrição de **autorização**, não impedimento técnico: o item pertence à aplicação Meu Pluggy e nossa `clientId` é outra aplicação, com leitura mas sem escrita sobre ele. Verificado na prática — pelo site do Meu Pluggy a mesma atualização roda **sem pedir senha**, o widget abre com o CPF preenchido e coleta em ~1 min.
 >
-> **Dá para forçar, só que manualmente:** `https://meu.pluggy.ai/connections/<itemId>` → botão **Atualizar** → pop-up do banco (~1 min) → voltar ao app e clicar 🔄. O app monta esse link sozinho na faixa de aviso quando o dado passa de 24h.
+> **Caminho manual:** `https://meu.pluggy.ai/connections/<itemId>` → botão **Atualizar** → voltar ao app e clicar 🔄. O app monta esse link sozinho na faixa de aviso quando o dado passa de 24h.
+>
+> **Em aberto:** `POST /connect_tokens` + widget do Pluggy Connect em modo update poderia embutir o fluxo no app. Não testado; provavelmente esbarra na mesma fronteira de aplicação.
 
 ### Como o Apps Script deriva o mês da transação
 

@@ -659,9 +659,10 @@ function horasDesde(iso){
  * Link para a conexão no Meu Pluggy.
  *
  * É o único caminho para forçar o Pluggy a ir ao banco: o `PATCH /items` é
- * recusado com "MeuPluggy item cant be updated" porque a atualização abre a
- * tela de consentimento do próprio banco — precisa de gente autenticando, não
- * dá para automatizar. Levar direto ao botão é o melhor que o app pode fazer.
+ * recusado com "MeuPluggy item cant be updated" — restrição de autorização, o
+ * item pertence à aplicação Meu Pluggy e nossa clientId só tem leitura. Pelo
+ * site deles a mesma atualização roda sem pedir senha. Levar direto ao botão é
+ * o melhor que o app pode fazer hoje.
  */
 const linkMeuPluggy=itemId=>`https://meu.pluggy.ai/connections/${itemId}`;
 
@@ -735,9 +736,8 @@ function BarraOpenFinance({temOF,ultimoSync,pluggyEm,erroSync,conciliacao,conexo
             ))}
           </div>
           <div style={{marginTop:8,opacity:0.85}}>
-            Lá tem o botão <strong>Atualizar</strong>. Abre a tela do próprio banco
-            e leva cerca de 1 min — por isso não dá para automatizar. Depois volte
-            aqui e clique em 🔄.
+            Lá tem o botão <strong>Atualizar</strong>: não pede senha, coleta
+            sozinho em cerca de 1 min. Depois volte aqui e clique em 🔄.
           </div>
         </div>
       )}
