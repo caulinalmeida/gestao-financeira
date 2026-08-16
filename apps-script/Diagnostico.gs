@@ -218,9 +218,13 @@ function diagnosticoOpenFinance() {
  *      Meu Pluggy (clientUserId: my-pluggy:<email>), a mesma fronteira que já
  *      derruba o PATCH com 400 "MeuPluggy item cant be updated".
  *
- * (a) é trabalho; (b) é permissão. Esta função testa (b), que é a que decide.
- * Um 404/403 aqui encerra o assunto: o widget embutido não é caminho enquanto
- * a conexão viver no Meu Pluggy.
+ * MEDIDO EM 16/08/2026: 403 Forbidden nos DOIS modos, create inclusive.
+ * Ou seja, nem chegamos em (b) — a credencial do Meu Pluggy não emite
+ * connect_token de jeito nenhum. É leitura das suas conexões e mais nada.
+ * Assunto encerrado num nível acima do que eu supunha.
+ *
+ * Vale rodar de novo se o Pluggy mudar os termos do Meu Pluggy — é o único
+ * cenário em que isso destrava.
  *
  * Não escreve nada. connect_token é de leitura curta e some sozinho.
  */
@@ -241,7 +245,18 @@ function testarWidgetUpdate() {
     p('     Apps Script, nunca no bundle.');
   } else {
     p('   → ' + JSON.stringify(criar.body).slice(0, 300));
-    p('   → Sem isto, nem modo create funciona. Confira as credenciais.');
+    if (criar.code === 403) {
+      // Medido em 16/08/2026: 403 aqui, com credencial que sincroniza normal.
+      // Não é erro de credencial — é escopo. Meu Pluggy dá leitura das suas
+      // conexões e nada além disso.
+      p('   → 403 = autenticado, mas o endpoint não é nosso. A credencial do');
+      p('     Meu Pluggy é SOMENTE LEITURA: sem connect_tokens, sem widget.');
+      p('     Encerra o assunto antes mesmo da questão de posse do item.');
+    } else if (criar.code === 401) {
+      p('   → 401 = credencial inválida. Confira PLUGGY_CLIENT_ID/SECRET.');
+    } else {
+      p('   → Sem isto, nem modo create funciona.');
+    }
   }
 
   var items = pluggyItems();

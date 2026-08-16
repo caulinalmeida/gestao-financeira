@@ -102,14 +102,15 @@ mostra a que horas o Pluggy realmente visita — aí dá para alinhar o gatilho.
 >
 > **Caminho manual:** `https://meu.pluggy.ai/connections/<itemId>` → botão **Atualizar** → voltar ao app e clicar 🔄. O app monta esse link sozinho na faixa de aviso quando o dado passa de 24h.
 >
-> **Widget do Pluggy Connect embutido no app: descartado.** A ideia era `POST /connect_tokens` + widget em modo update, para atualizar sem sair do app. Esbarra em duas coisas, e a segunda é fatal:
+> **Widget do Pluggy Connect embutido no app: descartado, medido.** A ideia era `POST /connect_tokens` + widget em modo update, para atualizar sem sair do app.
 >
-> 1. Emitir o token exige `clientId`/`clientSecret`, que não podem ir para o bundle público. Contornável — o Apps Script emitiria e devolveria pela planilha, como o `pedido_sync`. É trabalho, não impedimento.
-> 2. Modo update exige `itemId` no token, e a [doc do endpoint](https://docs.pluggy.ai/reference/connect-token-create) diz que `itemId` de outra aplicação devolve **404 `ITEM_NOT_FOUND`**. O nosso item é do Meu Pluggy — a mesma fronteira que já derruba o PATCH. É permissão, e não temos como contornar.
+> `testarWidgetUpdate()` (em `Diagnostico.gs`) rodou em 16/08/2026 e devolveu **403 Forbidden nos dois modos — create inclusive**. Com a mesma credencial que sincroniza normalmente, então não é credencial errada: 403 é autenticado sem permissão para o endpoint. **A credencial do Meu Pluggy é somente leitura das suas próprias conexões.** Não emite `connect_token`, não faz PATCH.
 >
-> `testarWidgetUpdate()` (em `Diagnostico.gs`) confirma na prática: emite um token em modo create (deve passar) e um em modo update (deve dar 404). Rodar de novo se o Pluggy mudar as regras.
+> Isso encerra o assunto um nível acima da posse do item: a hipótese anterior era que o widget esbarraria no `itemId` do Meu Pluggy ([404 `ITEM_NOT_FOUND` pela doc](https://docs.pluggy.ai/reference/connect-token-create)), mas nem se chega lá. Também torna irrelevante a parte contornável — o Apps Script poderia guardar o segredo e emitir o token pela planilha, como o `pedido_sync` faz; só que não há token a emitir.
 >
-> **Reconectar o Itaú sob a nossa própria aplicação** resolveria de vez — o item seria nosso, o PATCH bastaria e o widget nem seria preciso. Mas sai do Meu Pluggy, que é o tier gratuito; o plano pago começa na casa dos milhares de reais/mês. Para um app doméstico, não fecha. É por isso que o caminho manual (`meu.pluggy.ai` → Atualizar → 🔄 no app) continua sendo o desenho certo, não uma gambiarra provisória.
+> **Reconectar o Itaú sob a nossa própria aplicação** é a única coisa que destravaria — aí o item seria nosso, o PATCH bastaria e o widget nem seria preciso. Mas sai do Meu Pluggy, que é o tier gratuito; o [plano pago](https://www.pluggy.ai/en/pricing) começa na casa dos milhares de reais/mês. Para um app doméstico, não fecha.
+>
+> Por isso o caminho manual (`meu.pluggy.ai` → Atualizar → 🔄 no app) **é o desenho certo**, não uma gambiarra à espera de solução. Só vale reabrir se o Pluggy mudar os termos do Meu Pluggy — rodar `testarWidgetUpdate()` de novo responde em 10 segundos.
 
 ### Como o Apps Script deriva o mês da transação
 

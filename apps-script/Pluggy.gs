@@ -119,9 +119,10 @@ function pluggyAtualizarItem(itemId) {
  * Com `itemId`, o widget abre em modo update (atualiza a conexão existente).
  * Sem `itemId`, abre em modo create (conecta um banco novo).
  *
- * ⚠️ A doc é explícita: itemId que não pertence à aplicação que pede devolve
- * 404 ITEM_NOT_FOUND. Como o nosso item é do Meu Pluggy, é o resultado
- * esperado aqui. testarWidgetUpdate() confirma na prática.
+ * ⚠️ NÃO FUNCIONA COM A CREDENCIAL DO MEU PLUGGY: 403 Forbidden nos dois
+ * modos, medido em 16/08/2026. É leitura das suas conexões e nada além —
+ * nem create, que nem depende de posse de item. A função fica porque
+ * credencial de aplicação própria emite normalmente.
  */
 function pluggyConnectToken(itemId) {
   var payload = {};
