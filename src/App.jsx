@@ -424,6 +424,7 @@ function projetarParcelas(transacoes,ajustes,dict,cartoes,mesBase,horizonte){
       c={chave:k,nome:t.nome,accountId:t.accountId,
         cartao:nomeCartao(t.accountId,cartoes,ajustes),
         dono:ov?.dono??hit?.dono??"",
+        obs:ov?.obs??hit?.obs??"",
         parcelaTotal:t.parcelaTotal,valorTotal:t.valorTotal||0,
         conhecidas:new Map()};
       compras.set(k,c);
@@ -431,6 +432,8 @@ function projetarParcelas(transacoes,ajustes,dict,cartoes,mesBase,horizonte){
     // Mesmo número de parcela vindo duas vezes: a última lida vence.
     c.conhecidas.set(t.parcelaNum,{mesRef:mes,valor:t.valor});
     if(!c.dono&&ov?.dono) c.dono=ov.dono;
+    // A obs vem da parcela que o usuário anotou — pode ser qualquer uma delas.
+    if(!c.obs&&ov?.obs) c.obs=ov.obs;
   });
 
   // 2. O banco agenda as parcelas futuras com antecedência — elas chegam
@@ -485,7 +488,7 @@ function projetarParcelas(transacoes,ajustes,dict,cartoes,mesBase,horizonte){
     if(!restantes.length) return;
     const mesFinal=proprias.reduce((a,p)=>p.mesRef>a?p.mesRef:a,proprias[0].mesRef);
     resumo.push({
-      chave:c.chave,nome:c.nome,cartao:c.cartao,dono:c.dono,
+      chave:c.chave,nome:c.nome,cartao:c.cartao,dono:c.dono,obs:c.obs,
       parcelaTotal:c.parcelaTotal,valorParcela:ancora.valor,
       proximaNum:restantes[0].num,restantes:restantes.length,
       falta:restantes.reduce((a,p)=>a+p.valor,0),
@@ -560,6 +563,29 @@ function MetricCard({label,value,sub,accent,icon,children}){
       <div style={{fontSize:21,fontWeight:700,color:a.color,lineHeight:1.2,letterSpacing:"-0.02em",fontVariantNumeric:"tabular-nums"}}>{value}</div>
       {sub&&<div style={{fontSize:11,color:a.color,opacity:0.65,marginTop:4}}>{sub}</div>}
       {children}
+    </div>
+  );
+}
+
+/**
+ * Linhas de detalhe dentro de um MetricCard.
+ *
+ * Herdam a cor do card, com opacidade menor, para o número grande continuar
+ * sendo o que se lê primeiro — a quebra é apoio, não concorrente.
+ */
+function DetalheCard({cor,linhas}){
+  const visiveis=linhas.filter(l=>l&&(l.sempre||Math.abs(l.valor)>=0.01));
+  if(!visiveis.length) return null;
+  return(
+    <div style={{marginTop:10,paddingTop:8,borderTop:`1px solid ${cor}22`}}>
+      {visiveis.map(l=>(
+        <div key={l.rot} style={{display:"flex",justifyContent:"space-between",gap:8,
+          fontSize:11,color:cor,opacity:l.forte?0.95:0.7,padding:"2px 0",
+          fontWeight:l.forte?700:400}}>
+          <span>{l.rot}</span>
+          <span style={{fontVariantNumeric:"tabular-nums"}}>{fmtBRL(l.valor)}</span>
+        </div>
+      ))}
     </div>
   );
 }
@@ -918,16 +944,22 @@ function PainelParcelas({proj,mesRef,isMobile,onVerMes}){
       <div style={card}>
         <SectionLabel>Compras em andamento</SectionLabel>
         <div style={{overflowX:"auto"}}>
-          <table style={{width:"100%",fontSize:12,borderCollapse:"collapse",minWidth:560}}>
+          <table style={{width:"100%",fontSize:12,borderCollapse:"collapse",minWidth:640}}>
             <thead><tr style={{background:C.surfaceAlt}}>
-              {["Compra","Cartão","Dono","Próxima","Valor/mês","Restam","Falta","Termina"].map(h=>
+              {["Compra","Obs","Cartão","Dono","Próxima","Valor/mês","Restam","Falta","Termina"].map(h=>
                 <th key={h} style={th}>{h}</th>)}
             </tr></thead>
             <tbody>{compras.map(c=>(
               <tr key={c.chave}>
-                <td style={{...td,maxWidth:190}}>
+                <td style={{...td,maxWidth:180}}>
                   <div style={{whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}
                     title={c.nome}>{c.nome}</div>
+                </td>
+                {/* A obs é o que você escreveu na fatura — costuma ser o nome
+                    de verdade da compra, já que a descrição do banco é cifrada. */}
+                <td style={{...td,maxWidth:150,color:c.obs?C.text:C.textMuted}}>
+                  <div style={{whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}
+                    title={c.obs||""}>{c.obs||"—"}</div>
                 </td>
                 <td style={{...td,color:C.textDim,whiteSpace:"nowrap"}}>{c.cartao}</td>
                 <td style={td}>
@@ -1632,36 +1664,6 @@ export default function App(){
   // Parcelas futuras: derivadas, não armazenadas. Ver projetarParcelas.
   const proj=projetarParcelas(ofTransacoes,ajustes,dict,ofCartoes,mesRef,12);
 
-  /**
-   * Previsão do mês que vem, com o que já dá para saber hoje.
-   *
-   * Três fontes, sem sobreposição:
-   *   1. o que o banco já lançou para o mês seguinte (fatura em aberto)
-   *   2. as parcelas que ainda NÃO apareceram, mas vão — só as projetadas,
-   *      porque as reais já entraram no item 1 e contariam dobrado
-   *   3. despesa fixa e investimento deste mês, assumidos recorrentes
-   *
-   * O item 3 é uma suposição, e por isso aparece rotulado como tal na tela.
-   */
-  const mesSeguinte=mesProximo(mesRef);
-  const previsao=(()=>{
-    const jaLancado=mergeFatura(ofTransacoes,ajustes,dict,ofCartoes,
-      {mesRef:mesSeguinte,status:"PENDING",mostrarIgnoradas:false,mostrarPagamentos:false});
-    const cartaoLancado=totalFatura(jaLancado);
-    const projNaoLancadas=(proj.porMes.find(m=>m.mesRef===mesSeguinte)?.itens||[])
-      .filter(p=>p.projetada);
-    const cartaoProjetado=projNaoLancadas.reduce((a,p)=>a+p.valor,0);
-    const fixas=contas.filter(r=>r.tipo==="DESPESA FIXA");
-    const totalFixas=fixas.reduce((a,r)=>a+parseBRL(r.valor),0);
-    const totalInvest=invest.reduce((a,r)=>a+parseBRL(r.valor),0);
-    return{
-      mesRef:mesSeguinte,cartaoLancado,cartaoProjetado,totalFixas,totalInvest,
-      qtdLancado:jaLancado.length,qtdProjetada:projNaoLancadas.length,
-      qtdFixas:fixas.length,
-      total:cartaoLancado+cartaoProjetado+totalFixas+totalInvest,
-    };
-  })();
-
   const updF=(id,f,v)=>withSync(mesRef,"fatura",c=>({fatura:c.fatura.map(r=>r.id===id?{...r,[f]:v}:r)}));
   const rmF=id=>withSync(mesRef,"fatura",c=>({fatura:c.fatura.filter(r=>r.id!==id)}));
 
@@ -1722,16 +1724,28 @@ export default function App(){
       p.forEach(nome=>soma(mapa,nome,(r.valor||0)/p.length));
     };
 
+    // Baldes por categoria. Cada um guarda o rateio por pessoa e o total, para
+    // os cards do topo poderem abrir "Despesas" em Fixas / Despesas / Cartão
+    // sem recalcular nada.
+    const fixas={},variaveis={},cartaoPor={},investPor={};
+
     const contasList=[],invList=[];
     contas.forEach(r=>{
       const v=parseBRL(r.valor);
       if(r.tipo==="RENDA"){ratear(renda,{dono:r.dono||DIVIDIDO,valor:v});return;}
       if(r.tipo==="INVESTIMENTO"){invList.push({...r,valor:v,secao:"INV"});return;}
-      contasList.push({...r,valor:v,secao:"CONTA"});
+      contasList.push({...r,valor:v,secao:"CONTA",fixa:r.tipo==="DESPESA FIXA"});
     });
     invest.forEach(r=>invList.push({...r,valor:parseBRL(r.valor),secao:"INV"}));
-    [...contasList,...invList].forEach(r=>{
+
+    contasList.forEach(r=>{
       ratear(desp,r);
+      ratear(r.fixa?fixas:variaveis,r);
+      if(estaPago(r.secao,r)) ratear(pagoPor,r);
+    });
+    invList.forEach(r=>{
+      ratear(desp,r);
+      ratear(investPor,r);
       if(estaPago(r.secao,r)) ratear(pagoPor,r);
     });
 
@@ -1747,6 +1761,7 @@ export default function App(){
       const sub=r.parcelas==="RECORRENTE"?"fixos":r.parcelas==="PARCELADO"?"parcelados":"variaveis";
       cartoesMap[nome][sub].push(r);
       ratear(desp,r);
+      ratear(cartaoPor,r);
       if(estaPago("CARTAO",r)) ratear(pagoPor,r);
     });
 
@@ -1768,7 +1783,16 @@ export default function App(){
       return{nome,total:itens.reduce((a,r)=>a+r.valorPessoa,0),itens};
     });
 
+    // Só o casal entra nos totais — terceiro é cobrança, não despesa de vocês.
+    const totalDo=mapa=>CASAL.reduce((a,n)=>a+(mapa[n]||0),0);
+    const porPessoa=mapa=>({Caulin:mapa.Caulin||0,Luanna:mapa.Luanna||0,total:totalDo(mapa)});
+
     return{
+      renda:porPessoa(renda), despesas:porPessoa(desp),
+      fixas:porPessoa(fixas), variaveis:porPessoa(variaveis),
+      cartao:porPessoa(cartaoPor), investimentos:porPessoa(investPor),
+      saldo:{Caulin:saldoDe("Caulin"),Luanna:saldoDe("Luanna")},
+      // Nomes antigos, ainda usados pelo resumo de WhatsApp.
       rendaCaulin:renda.Caulin||0, rendaLuanna:renda.Luanna||0,
       despCaulin:desp.Caulin||0,   despLuanna:desp.Luanna||0,
       saldoCaulin:saldoDe("Caulin"),saldoLuanna:saldoDe("Luanna"),
@@ -2144,10 +2168,9 @@ export default function App(){
 
         {/* CHECKLIST */}
         {tab===4&&(()=>{
-          const{rendaCaulin,rendaLuanna,despCaulin,despLuanna,saldoCaulin,saldoLuanna,
+          const{renda,fixas,variaveis,cartao,investimentos,saldo,
             contasList,invList,totalFaturaCartoes,semDono,valorSemDono,
             aReceber,totalAReceber}=calcChecklist();
-          const rendaTotal=rendaCaulin+rendaLuanna;
 
           // `chave` em vez de `id`: os ids de contas/investimentos são
           // regenerados a cada carregamento, então o pago não sobreviveria.
@@ -2190,6 +2213,99 @@ export default function App(){
                 </Modal>
               )}
 
+              {/* ── Cards ──────────────────────────────────────────────────
+                  Três leituras, da mais geral para a mais específica: o mês
+                  inteiro, cada pessoa, e o que é cartão/cobrança. */}
+
+              <div style={{display:"grid",
+                gridTemplateColumns:isMobile?"1fr":"repeat(3,1fr)",gap:10,marginBottom:10}}>
+                <MetricCard label="Renda total" value={fmtBRL(renda.total)} accent="teal" icon="💰">
+                  <DetalheCard cor={C.teal600} linhas={[
+                    {rot:"Caulin",valor:renda.Caulin,sempre:true},
+                    {rot:"Luanna",valor:renda.Luanna,sempre:true},
+                  ]}/>
+                </MetricCard>
+
+                <MetricCard label="Despesas totais" value={fmtBRL(fixas.total+variaveis.total+cartao.total)} accent="red" icon="📉">
+                  <DetalheCard cor={C.red600} linhas={[
+                    {rot:"Fixas",valor:fixas.total,sempre:true},
+                    {rot:"Despesas",valor:variaveis.total,sempre:true},
+                    {rot:"Cartão de crédito",valor:cartao.total,sempre:true},
+                  ]}/>
+                </MetricCard>
+
+                <MetricCard label="Investimentos" value={fmtBRL(investimentos.total)} accent="green" icon="📈">
+                  <DetalheCard cor={C.green600} linhas={[
+                    {rot:"Caulin",valor:investimentos.Caulin,sempre:true},
+                    {rot:"Luanna",valor:investimentos.Luanna,sempre:true},
+                  ]}/>
+                </MetricCard>
+              </div>
+
+              <div style={{display:"grid",
+                gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:10,marginBottom:10}}>
+                {CASAL.map(pessoa=>{
+                  const cor=pessoa==="Caulin"?C.teal600:C.purple600;
+                  const total=fixas[pessoa]+variaveis[pessoa]+cartao[pessoa];
+                  const sld=saldo[pessoa];
+                  return(
+                    <MetricCard key={pessoa} label={`Despesas ${pessoa}`} value={fmtBRL(total)}
+                      accent={pessoa==="Caulin"?"teal":"purple"} icon="🧾">
+                      <DetalheCard cor={cor} linhas={[
+                        {rot:"Fixas",valor:fixas[pessoa],sempre:true},
+                        {rot:"Despesas",valor:variaveis[pessoa],sempre:true},
+                        {rot:"CC",valor:cartao[pessoa],sempre:true},
+                      ]}/>
+                      {/* Saldo destacado: é a única linha que muda ao marcar
+                          pago, e é o número que se olha no fim do mês. */}
+                      <div style={{display:"flex",justifyContent:"space-between",gap:8,
+                        marginTop:8,paddingTop:8,borderTop:`1px solid ${cor}33`,
+                        fontSize:12,fontWeight:700,
+                        color:sld>=0?C.green600:C.red600}}>
+                        <span>Saldo</span>
+                        <span style={{fontVariantNumeric:"tabular-nums"}}>{fmtBRL(sld)}</span>
+                      </div>
+                    </MetricCard>
+                  );
+                })}
+              </div>
+
+              <div style={{display:"grid",
+                gridTemplateColumns:isMobile?"1fr":"repeat(auto-fit,minmax(200px,1fr))",
+                gap:10,marginBottom:20}}>
+                {totalFaturaCartoes.map(({nome,total,pagos})=>{
+                  const pct=total>0?Math.round((pagos/total)*100):0;
+                  return(
+                    <MetricCard key={nome} label={nome} value={fmtBRL(total)} accent="blue" icon="💳">
+                      <div style={{margin:"10px 0 4px"}}><ProgressBar pct={pct} color={C.blue600}/></div>
+                      <div style={{fontSize:10,color:C.blue600,opacity:0.7}}>{pct}% pago</div>
+                    </MetricCard>
+                  );
+                })}
+
+                {!checklistEmAberto&&totalEmAberto>0&&(
+                  <MetricCard label="Fatura em aberto" value={fmtBRL(totalEmAberto)}
+                    sub="ainda não fechou — fora do cálculo" accent="amber" icon="🔴"/>
+                )}
+
+                {aReceber.length>0&&(
+                  <MetricCard label="A receber" value={fmtBRL(totalAReceber)} accent="blue" icon="💰">
+                    <div style={{marginTop:10,paddingTop:8,borderTop:`1px solid ${C.blue600}22`}}>
+                      {aReceber.map(p=>(
+                        <button key={p.nome} className="gf-btn"
+                          onClick={()=>setModal({title:`A receber — ${p.nome}`,rows:p.itens,pessoa:p.nome})}
+                          style={{display:"flex",width:"100%",justifyContent:"space-between",
+                            gap:8,padding:"3px 0",background:"transparent",border:"none",
+                            cursor:"pointer",fontSize:11,color:C.blue600,opacity:0.8}}>
+                          <span>{p.nome} ›</span>
+                          <span style={{fontVariantNumeric:"tabular-nums"}}>{fmtBRL(p.total)}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </MetricCard>
+                )}
+              </div>
+
               {semDono.length>0&&(
                 <button className="gf-btn" onClick={()=>{setTab(0);setFaturaTab(1);}}
                   style={{...card,width:"100%",textAlign:"left",cursor:"pointer",
@@ -2205,28 +2321,6 @@ export default function App(){
                 </button>
               )}
 
-              {/* Summary cards */}
-              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:10,marginBottom:20}}>
-                <MetricCard label="Renda total" value={fmtBRL(rendaTotal)} sub={`C: ${fmtBRL(rendaCaulin)}`} accent="teal" icon="💰"/>
-                <MetricCard label="Despesas Caulin" value={fmtBRL(despCaulin)} accent="red" icon="📉"/>
-                <MetricCard label="Despesas Luanna" value={fmtBRL(despLuanna)} accent="purple" icon="📉"/>
-                <MetricCard label="Saldo Caulin" value={fmtBRL(saldoCaulin)} sub="após pagamentos" accent={saldoCaulin>=0?"green":"red"} icon="💵"/>
-                <MetricCard label="Saldo Luanna" value={fmtBRL(saldoLuanna)} sub="após pagamentos" accent={saldoLuanna>=0?"green":"red"} icon="💵"/>
-                {totalEmAberto>0&&(
-                  <MetricCard label="Fatura em aberto" value={fmtBRL(totalEmAberto)}
-                    sub="ainda não fechou — fora do cálculo" accent="amber" icon="🔴"/>
-                )}
-                {totalFaturaCartoes.map(({nome,total,pagos})=>{
-                  const pct=total>0?Math.round((pagos/total)*100):0;
-                  return(
-                    <MetricCard key={nome} label={nome} value={fmtBRL(total)} accent="blue" icon="💳">
-                      <div style={{margin:"8px 0 4px"}}><ProgressBar pct={pct} color={C.blue600}/></div>
-                      <div style={{fontSize:10,color:C.blue600,opacity:0.7}}>{pct}% pago</div>
-                    </MetricCard>
-                  );
-                })}
-              </div>
-
               {checklistEmAberto&&(
                 <div style={{...card,background:C.amberSoft,border:`1px solid ${C.amber100}`,
                   padding:"10px 14px"}}>
@@ -2235,77 +2329,6 @@ export default function App(){
                     O cartão abaixo usa a fatura em aberto, então os valores podem
                     mudar até o fechamento. Marcar como pago já funciona.
                   </div>
-                </div>
-              )}
-
-              {previsao.total>0&&(
-                <div style={{...card,background:C.surfaceAlt,border:`1px solid ${C.border}`}}>
-                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",
-                    gap:10,flexWrap:"wrap",marginBottom:8}}>
-                    <span style={{fontSize:13,fontWeight:600,color:C.text}}>
-                      🔮 Previsão de {mesLabel(previsao.mesRef)}
-                    </span>
-                    <strong style={{fontSize:17,color:C.text,fontVariantNumeric:"tabular-nums"}}>
-                      {fmtBRL(previsao.total)}
-                    </strong>
-                  </div>
-                  <div style={{display:"grid",
-                    gridTemplateColumns:isMobile?"1fr":"repeat(auto-fit,minmax(150px,1fr))",gap:8}}>
-                    {[
-                      {rot:"Fatura já lançada",v:previsao.cartaoLancado,
-                       sub:`${previsao.qtdLancado} lançamento${previsao.qtdLancado===1?"":"s"}`,firme:true},
-                      {rot:"Parcelas a cair",v:previsao.cartaoProjetado,
-                       sub:`${previsao.qtdProjetada} projetada${previsao.qtdProjetada===1?"":"s"}`,firme:false},
-                      {rot:"Despesas fixas",v:previsao.totalFixas,
-                       sub:`${previsao.qtdFixas} conta${previsao.qtdFixas===1?"":"s"} · repetindo este mês`,firme:false},
-                      {rot:"Investimentos",v:previsao.totalInvest,
-                       sub:"repetindo este mês",firme:false},
-                    ].filter(x=>x.v>0).map(x=>(
-                      <div key={x.rot} style={{padding:"8px 10px",borderRadius:8,
-                        background:C.surface,border:`1px solid ${C.borderSoft}`}}>
-                        <div style={{fontSize:10,color:C.textMuted,textTransform:"uppercase",
-                          letterSpacing:"0.06em",fontWeight:700}}>
-                          {x.rot}{!x.firme&&<span style={{opacity:0.7}}> ~</span>}
-                        </div>
-                        <div style={{fontSize:15,fontWeight:700,color:C.text,marginTop:3,
-                          fontVariantNumeric:"tabular-nums"}}>{fmtBRL(x.v)}</div>
-                        <div style={{fontSize:10,color:C.textMuted,marginTop:2}}>{x.sub}</div>
-                      </div>
-                    ))}
-                  </div>
-                  <p style={{fontSize:11,color:C.textMuted,margin:"10px 0 0",lineHeight:1.5}}>
-                    O que tem <strong>~</strong> é estimativa: parcela que ainda não
-                    apareceu na fatura, e conta fixa/investimento assumidos iguais
-                    aos deste mês. A fatura já lançada é dado do banco.
-                  </p>
-                </div>
-              )}
-
-              {aReceber.length>0&&(
-                <div style={{...card,background:C.blue50,border:`1px solid ${C.blue100}`}}>
-                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",
-                    marginBottom:6,gap:10,flexWrap:"wrap"}}>
-                    <span style={{fontSize:13,fontWeight:600,color:C.blue600}}>💰 A receber</span>
-                    <strong style={{fontSize:17,color:C.blue600,fontVariantNumeric:"tabular-nums"}}>
-                      {fmtBRL(totalAReceber)}
-                    </strong>
-                  </div>
-                  <p style={{fontSize:11,color:C.blue600,opacity:0.75,margin:"0 0 8px",lineHeight:1.5}}>
-                    Compras de terceiros no cartão de vocês. Já saiu das despesas de
-                    Caulin e Luanna — é cobrança, não gasto do casal.
-                  </p>
-                  {aReceber.map(p=>(
-                    <button key={p.nome} className="gf-btn"
-                      onClick={()=>setModal({title:`A receber — ${p.nome}`,rows:p.itens,pessoa:p.nome})}
-                      style={{display:"flex",width:"100%",justifyContent:"space-between",
-                        alignItems:"center",gap:10,padding:"9px 0",background:"transparent",
-                        border:"none",borderTop:`1px solid ${C.blue100}`,cursor:"pointer",
-                        fontSize:13,color:C.text}}>
-                      <span>{p.nome}<span style={{color:C.textMuted,marginLeft:6,fontSize:11}}>
-                        {p.itens.length} item{p.itens.length===1?"":"s"} ›</span></span>
-                      <strong style={{fontVariantNumeric:"tabular-nums"}}>{fmtBRL(p.total)}</strong>
-                    </button>
-                  ))}
                 </div>
               )}
 
