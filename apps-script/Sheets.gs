@@ -51,9 +51,13 @@ function garantirAbas() {
   aba(ABA_CARTOES,    COLS_CARTOES);
   aba(ABA_FATURAS,    COLS_FATURAS);
   aba(ABA_STATUS,     COLS_STATUS);
-  aba(ABA_AJUSTES,    COLS_AJUSTES);   // cabeçalho só; conteúdo é do app
-  var msg = '✅ Abas OF_* prontas: ' + [ABA_TRANSACOES, ABA_CARTOES, ABA_FATURAS,
-                                        ABA_STATUS, ABA_AJUSTES].join(', ');
+  // As três abaixo são escritas pelo APP; aqui só criamos o cabeçalho.
+  aba(ABA_AJUSTES,    COLS_AJUSTES);
+  aba(ABA_PESSOAS,    COLS_PESSOAS);
+  aba(ABA_PAGO,       COLS_PAGO);
+  var msg = '✅ Abas prontas: ' + [ABA_TRANSACOES, ABA_CARTOES, ABA_FATURAS,
+                                   ABA_STATUS, ABA_AJUSTES, ABA_PESSOAS,
+                                   ABA_PAGO].join(', ');
   Logger.log(msg);
   return msg;
 }

@@ -130,6 +130,27 @@ eq('  e usa o mês da transação', r.mes, '2026-08');
 r = dm({ date: '2026-08-10T00:00:00Z', creditCardMetadata: {} }, {}, 25, 5);
 eq('fecha 25 / vence 5 do mês seguinte: compra 10/08 → set', r.mes, '2026-09');
 
+// Parcela futura vem datada com o VENCIMENTO da fatura, não com a compra.
+// Ancorado no Airbnb real: 01/06 caiu em ago (BILL) e 02/06 chegou datada
+// 10/09 — o ciclo mandava para outubro e pulava setembro inteiro.
+console.log('     -- parcela futura agendada pelo banco --');
+const futuro = new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10);
+const mesFuturo = futuro.slice(0, 7);
+r = dm({ date: futuro + 'T00:00:00Z', creditCardMetadata: { totalInstallments: 6, installmentNumber: 2 } }, {}, 3, 10);
+eq('data no futuro → mês da própria data', r.mes, mesFuturo);
+ok('  e a regra registrada é AGENDADA', r.origem === 'AGENDADA', JSON.stringify(r));
+
+const passado = new Date(Date.now() - 5 * 86400000);
+const diaPassado = passado.getUTCDate();
+r = dm({ date: passado.toISOString().slice(0, 10) + 'T00:00:00Z', creditCardMetadata: { totalInstallments: 6, installmentNumber: 1 } }, {}, 3, 10);
+ok('data passada continua no CICLO (compra de verdade)', r.origem === 'CICLO',
+   JSON.stringify(r) + ' dia=' + diaPassado);
+
+// BILL continua vencendo tudo: transação POSTED tem a fatura certa.
+r = dm({ date: futuro + 'T00:00:00Z', creditCardMetadata: { billId: 'b9', totalInstallments: 6 } },
+       { b9: '2026-09-10T00:00:00Z' }, 3, 10);
+ok('BILL tem precedência sobre AGENDADA', r.origem === 'BILL', JSON.stringify(r));
+
 // ── 5c. Natureza da transação ───────────────────────────────────────────────
 console.log('\n=== 5c. _tipoTransacao (o banco não soma o pagamento) ===');
 const tt = sandbox._tipoTransacao;

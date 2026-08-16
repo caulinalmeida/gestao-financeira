@@ -6,7 +6,11 @@ const SCOPES    = "https://www.googleapis.com/auth/spreadsheets";
 const API_BASE  = `https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}`;
 
 const MESES = ["JANEIRO","FEVEREIRO","MARÇO","ABRIL","MAIO","JUNHO","JULHO","AGOSTO","SETEMBRO","OUTUBRO","NOVEMBRO","DEZEMBRO"];
-const DONOS = ["Caulin","Luanna","Dividido"];
+// O casal é fixo por design (ver CLAUDE.md). "Dividido" é o apelido histórico
+// de "Caulin+Luanna" e continua sendo gravado assim para não quebrar o legado.
+const CASAL = ["Caulin","Luanna"];
+const DIVIDIDO = "Dividido";
+const DONOS = [...CASAL,DIVIDIDO];
 const PARC_OPTS = ["VARIÁVEL","PARCELADO","RECORRENTE"];
 const TIPOS_CONTA = ["RENDA","DESPESA FIXA","DESPESA","INVESTIMENTO"];
 
@@ -170,12 +174,35 @@ function parseDataFlex(v){
 }
 function dataCurta(iso){const m=String(iso||"").match(/^(\d{4})-(\d{2})-(\d{2})$/);return m?`${m[3]}/${m[2]}`:String(iso||"");}
 
+/**
+ * Tira o "06/21" que o Itaú carimba no fim da descrição das parceladas.
+ *
+ * O sufixo é redundante — parcela_num e parcela_total já vêm estruturados do
+ * Pluggy — e quebrava tudo que agrupa por descrição: cada parcela virava uma
+ * compra diferente na aba Parcelas (SAMSUNG 06/21, 07/21 e 08/21 eram três
+ * compras de 21x), e o dicionário nunca conseguia aprender uma parcelada,
+ * porque a chave mudava de mês em mês.
+ *
+ * Só remove quando os números batem exatamente com a parcela conhecida, para
+ * não comer um "01/06" que faça parte do nome de verdade do estabelecimento.
+ */
+function semSufixoParcela(desc,num,total){
+  const s=String(desc||"").trim();
+  if(!(total>1)||!(num>0)) return s;
+  return s.replace(new RegExp(`\\s*0*${num}\\s*/\\s*0*${total}\\s*$`),"").trim()||s;
+}
+
 function rowToOfTx(row){
+  const parcelaNum=parseInt(row[10],10)||0;
+  const parcelaTotal=parseInt(row[11],10)||0;
   return{
     id:row[0]||"",accountId:row[1]||"",mesRef:parseMesRef(row[2])||"",origemMes:row[3]||"",
     natureza:String(row[4]||"COMPRA").toUpperCase(),data:parseDataFlex(row[5]),
-    nome:row[6]||"",valor:parseBRL(row[7]),status:String(row[8]||"").toUpperCase(),
-    billId:row[9]||"",parcelaNum:parseInt(row[10],10)||0,parcelaTotal:parseInt(row[11],10)||0,
+    // Nome limpo. O fingerprint vem pronto da planilha e usa a descrição crua,
+    // então limpar aqui não desliga nenhum ajuste já gravado.
+    nome:semSufixoParcela(row[6],parcelaNum,parcelaTotal),
+    valor:parseBRL(row[7]),status:String(row[8]||"").toUpperCase(),
+    billId:row[9]||"",parcelaNum,parcelaTotal,
     valorTotal:parseBRL(row[12]),dataCompra:parseDataFlex(row[13]),fingerprint:row[14]||"",
   };
 }
@@ -207,6 +234,67 @@ function ajusteToRow(a){
 // Ajuste sem nenhuma decisão do usuário não precisa ocupar linha na planilha.
 function ajusteVazio(a){
   return !a||(!a.dono&&!a.classificacao&&!a.obs&&!a.ignorada&&!a.mesRefOverride&&!a.apelido);
+}
+
+/**
+ * Quem participa do rateio de um lançamento.
+ *
+ * O campo Dono guarda os participantes separados por "+", então terceiros
+ * cabem sem mudar coluna nenhuma da planilha:
+ *
+ *   "Caulin"                  → só Caulin
+ *   "Dividido"                → Caulin e Luanna (apelido histórico, ÷2)
+ *   "Rafael"                  → 100% do Rafael, vira "a receber"
+ *   "Caulin+Rafael"           → ÷2 entre os dois
+ *   "Caulin+Luanna+Rafael"    → ÷3
+ *
+ * O valor é sempre dividido igualmente entre os participantes.
+ */
+function participantes(dono){
+  const s=String(dono||"").trim();
+  if(!s) return [];
+  if(s===DIVIDIDO) return [...CASAL];
+  return [...new Set(s.split("+").map(x=>x.trim()).filter(Boolean))];
+}
+/** Quanto desse lançamento cabe a uma pessoa. */
+function valorDe(valor,dono,pessoa){
+  const p=participantes(dono);
+  return p.includes(pessoa)?(valor||0)/p.length:0;
+}
+/** Grava a forma canônica: o casal inteiro volta a ser "Dividido". */
+function donoCanonico(lista){
+  const p=[...new Set(lista.filter(Boolean))];
+  if(p.length===2&&CASAL.every(c=>p.includes(c))) return DIVIDIDO;
+  return p.join("+");
+}
+/** Todo mundo que não é do casal — os terceiros a cobrar. */
+function terceirosDe(dono){
+  return participantes(dono).filter(p=>!CASAL.includes(p));
+}
+function rotuloDono(dono){
+  const p=participantes(dono);
+  return p.length>1?p.join(" + "):(p[0]||"");
+}
+
+/**
+ * Chave estável de uma linha do checklist, para o "pago" sobreviver ao F5.
+ *
+ * Não dá para usar o id da linha: contas, investimentos e lançamentos manuais
+ * recebem um uid() novo a cada carregamento da planilha. A chave é derivada do
+ * conteúdo — se você editar o valor ou a descrição, a marcação de pago some, o
+ * que é o comportamento certo: virou outro lançamento.
+ *
+ * Transação do Open Finance usa o id do Pluggy, que é estável, com fallback no
+ * fingerprint para quando o Pluggy recria a transação.
+ */
+function chavePago(mes,secao,r){
+  if(r.origem==="OPEN_FINANCE"&&r.id) return `TX|${r.id}`;
+  const nome=normalize(r.transacao||r.descricao||r.nome||"");
+  return `${secao}|${mes}|${nome}|${Number(r.valor||0).toFixed(2)}`;
+}
+/** Chave do total agrupado (Fixos/Parcelados/Variáveis) de um cartão. */
+function chaveGrupo(mes,cartao,pessoa,grupo){
+  return `G|${grupo}|${mes}|${normalize(cartao)}|${pessoa}`;
 }
 
 // Nome de exibição do cartão: apelido do usuário vence o nome do banco.
@@ -593,7 +681,7 @@ function BarraOpenFinance({temOF,ultimoSync,pluggyEm,erroSync,conciliacao,pedind
 }
 
 /** Tabela de fatura. Serve tanto para Open Finance quanto para linhas legadas. */
-function TabelaFatura({titulo,subtitulo,linhas,isMobile,filtro,setFiltro,
+function TabelaFatura({titulo,subtitulo,linhas,isMobile,pessoas,filtro,setFiltro,
   mostrarIgnoradas,setMostrarIgnoradas,mostrarPagamentos,setMostrarPagamentos,
   onCampo,onIgnorar,onAprender,onLegado,onRemoverLegado}){
 
@@ -673,11 +761,9 @@ function TabelaFatura({titulo,subtitulo,linhas,isMobile,filtro,setFiltro,
                   <td style={{...td,fontWeight:600,fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap",
                     color:r.valor<0?C.green600:C.text}}>{fmtBRL(r.valor)}</td>
                   <td style={td}>
-                    <select value={r.dono} disabled={pag}
-                      onChange={e=>leg?onLegado(r.id,"dono",e.target.value):onCampo(r,"dono",e.target.value)}
-                      style={{...sel,width:88,opacity:pag?0.4:1,borderColor:!r.dono&&!pag?C.amber100:C.border}}>
-                      <option value="">—</option>{DONOS.map(d=><option key={d}>{d}</option>)}
-                    </select>
+                    <DonoSelect value={r.dono} pessoas={pessoas} width={104}
+                      onChange={v=>leg?onLegado(r.id,"dono",v):onCampo(r,"dono",v)}
+                      style={{opacity:pag?0.4:1,borderColor:!r.dono&&!pag?C.amber100:C.border}}/>
                   </td>
                   <td style={td}>
                     <select value={r.parcelas} disabled={pag}
@@ -845,6 +931,234 @@ function PainelParcelas({proj,mesRef,isMobile,onVerMes}){
   );
 }
 
+/**
+ * Configurações — fica fora das abas de trabalho de propósito.
+ *
+ * Junta as duas coisas que você configura uma vez e quase não mexe: o
+ * dicionário de categorização e o cadastro de pessoas.
+ */
+function PainelConfig({dict,onDict,pessoas,onPessoas,usoDoDict,isMobile}){
+  const [nova,setNova]=useState("");
+  const [filtroDict,setFiltroDict]=useState("");
+
+  const addPessoa=()=>{
+    const n=nova.trim();
+    if(!n) return;
+    // Nome do casal ou repetido não entra: viraria duplicata nos totais.
+    if(CASAL.includes(n)||n===DIVIDIDO||pessoas.some(p=>normalize(p)===normalize(n))){
+      setNova(""); return;
+    }
+    onPessoas([...pessoas,n]); setNova("");
+  };
+  const visiveis=filtroDict
+    ? dict.filter(d=>normalize(d.key).includes(normalize(filtroDict)))
+    : dict;
+
+  return(
+    <div>
+      <div style={card}>
+        <SectionLabel>Pessoas</SectionLabel>
+        <p style={{fontSize:12,color:C.textMuted,margin:"0 0 12px",lineHeight:1.6}}>
+          Quem mais usa o cartão de vocês. Aparecem no campo Dono e podem entrar
+          na divisão de um lançamento. O que for atribuído a elas sai das despesas
+          do casal e vira “a receber” no checklist.
+        </p>
+        <div style={{display:"flex",gap:6,marginBottom:12,flexWrap:"wrap"}}>
+          <input value={nova} onChange={e=>setNova(e.target.value)}
+            onKeyDown={e=>{if(e.key==="Enter")addPessoa();}}
+            placeholder="Nome (ex.: Rafael)" style={{...inp,maxWidth:220}}/>
+          <Btn active small onClick={addPessoa} disabled={!nova.trim()}>+ Adicionar</Btn>
+        </div>
+        {pessoas.length===0
+          ?<EmptyState icon="👥">Ninguém cadastrado ainda.</EmptyState>
+          :pessoas.map(p=>(
+            <div key={p} style={{display:"flex",alignItems:"center",justifyContent:"space-between",
+              gap:10,padding:"9px 0",borderTop:`1px solid ${C.borderSoft}`}}>
+              <span style={{fontSize:13,color:C.text}}>{p}</span>
+              <Btn danger small title="Remover"
+                onClick={()=>onPessoas(pessoas.filter(x=>x!==p))}>✕</Btn>
+            </div>
+          ))}
+        {pessoas.length>0&&(
+          <p style={{fontSize:11,color:C.textMuted,marginTop:10,lineHeight:1.5}}>
+            Remover alguém daqui não mexe nos lançamentos já classificados —
+            eles continuam com o nome gravado.
+          </p>
+        )}
+      </div>
+
+      <div style={card}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",
+          gap:8,flexWrap:"wrap",marginBottom:4}}>
+          <SectionLabel>Dicionário ({dict.length})</SectionLabel>
+          <input value={filtroDict} onChange={e=>setFiltroDict(e.target.value)}
+            placeholder="filtrar…" style={{...inp,maxWidth:160,fontSize:12}}/>
+        </div>
+        <p style={{fontSize:12,color:C.textMuted,margin:"0 0 12px",lineHeight:1.6}}>
+          Cada padrão casa por trecho da descrição, sem acento e sem
+          maiúsculas. É o que faz a fatura chegar classificada sozinha.
+        </p>
+        {dict.length===0
+          ?<EmptyState icon="🧠">Vazio. Use “Aprender” na fatura para ensinar.</EmptyState>
+          :<div style={{overflowX:"auto"}}>
+            <table style={{width:"100%",fontSize:12,borderCollapse:"collapse",minWidth:isMobile?460:520}}>
+              <thead><tr style={{background:C.surfaceAlt}}>
+                {["Padrão","Dono","Classificação","Obs","Usos",""].map(h=><th key={h} style={th}>{h}</th>)}
+              </tr></thead>
+              <tbody>{visiveis.map((d,i)=>{
+                const idx=dict.indexOf(d);
+                const upd=(campo,v)=>onDict(dict.map((x,j)=>j===idx?{...x,[campo]:v}:x));
+                return(
+                  <tr key={d.key+i}>
+                    <td style={td}>
+                      <input value={d.key} onChange={e=>upd("key",e.target.value)}
+                        style={{...inp,width:150,fontFamily:"ui-monospace,monospace"}}/>
+                    </td>
+                    <td style={td}>
+                      <DonoSelect value={d.dono} pessoas={pessoas} width={104}
+                        onChange={v=>upd("dono",v)}/>
+                    </td>
+                    <td style={td}>
+                      <select value={d.parcelas} onChange={e=>upd("parcelas",e.target.value)}
+                        style={{...sel,width:104}}>{PARC_OPTS.map(o=><option key={o}>{o}</option>)}</select>
+                    </td>
+                    <td style={td}>
+                      <input value={d.obs||""} onChange={e=>upd("obs",e.target.value)}
+                        style={{...inp,width:100}}/>
+                    </td>
+                    <td style={{...td,color:usoDoDict[d.key]?C.textDim:C.amber600,
+                      whiteSpace:"nowrap"}}>
+                      {usoDoDict[d.key]||0}
+                    </td>
+                    <td style={td}>
+                      <Btn danger small title="Remover"
+                        onClick={()=>onDict(dict.filter((_,j)=>j!==idx))}>✕</Btn>
+                    </td>
+                  </tr>
+                );
+              })}</tbody>
+            </table>
+          </div>}
+        <p style={{fontSize:11,color:C.textMuted,marginTop:10,lineHeight:1.5}}>
+          “Usos” conta quantas transações carregadas casam com o padrão. Zero
+          costuma ser padrão específico demais — normal em compra parcelada
+          antiga, suspeito no resto.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Texto do resumo, na ótica de UMA pessoa.
+ *
+ * Cada valor já vem dividido — quem recebe vê o que precisa pagar, não o total
+ * do casal. O saldo é renda menos o que essa pessoa já marcou como pago.
+ */
+function resumoWhatsApp(pessoa,calc,mesRef,vPessoa){
+  const{contasList,invList,totalFaturaCartoes,aReceber}=calc;
+  const renda=pessoa==="Caulin"?calc.rendaCaulin:calc.rendaLuanna;
+  const desp =pessoa==="Caulin"?calc.despCaulin :calc.despLuanna;
+  const saldo=pessoa==="Caulin"?calc.saldoCaulin:calc.saldoLuanna;
+  const meus=lista=>lista.filter(r=>vPessoa(r.valor,r.dono,pessoa)>0);
+  const linha=r=>`   ${r.transacao||r.descricao||r.nome}: ${fmtBRL(vPessoa(r.valor,r.dono,pessoa))}`;
+
+  const L=[`📊 ${pessoa.toUpperCase()} — ${mesLabel(mesRef)}`,""];
+  L.push(`💰 Renda: ${fmtBRL(renda)}`);
+  L.push(`📉 A pagar: ${fmtBRL(desp)}`);
+  L.push(`💵 Saldo: ${fmtBRL(saldo)}`,"");
+
+  const inv=meus(invList);
+  if(inv.length){ L.push("📈 Investimentos"); inv.forEach(r=>L.push(linha(r))); L.push(""); }
+
+  const ct=meus(contasList);
+  if(ct.length){ L.push("🏠 Contas"); ct.forEach(r=>L.push(linha(r))); L.push(""); }
+
+  totalFaturaCartoes.forEach(c=>{
+    const grupos=[["Fixos",c.fixos],["Parcelados",c.parcelados],["Variáveis",c.variaveis]]
+      .map(([rot,rows])=>[rot,meus(rows).reduce((a,r)=>a+vPessoa(r.valor,r.dono,pessoa),0)])
+      .filter(([,v])=>v>0);
+    if(!grupos.length) return;
+    L.push(`💳 ${c.nome}`);
+    grupos.forEach(([rot,v])=>L.push(`   ${rot}: ${fmtBRL(v)}`));
+    L.push(`   Total: ${fmtBRL(grupos.reduce((a,[,v])=>a+v,0))}`,"");
+  });
+
+  if(pessoa==="Caulin"&&aReceber.length){
+    L.push("💰 A receber de terceiros");
+    aReceber.forEach(p=>L.push(`   ${p.nome}: ${fmtBRL(p.total)}`));
+  }
+  return L.join("\n").trim();
+}
+
+/**
+ * Seletor de Dono, único em todo o app.
+ *
+ * O caso simples (Caulin / Luanna / Dividido / uma pessoa cadastrada) resolve
+ * no próprio select. A divisão customizada abre um modal de caixas de seleção
+ * — com N pessoas, listar todas as combinações no select seria inviável.
+ */
+function DonoSelect({value,onChange,pessoas,width,style}){
+  const [abrir,setAbrir]=useState(false);
+  const [marcados,setMarcados]=useState([]);
+  const atual=String(value||"");
+  const simples=[...DONOS,...pessoas];
+  // Combinação que não está na lista (ex.: "Caulin+Rafael") precisa aparecer
+  // como opção, senão o select mostraria o item errado.
+  const extra=atual&&!simples.includes(atual)?[atual]:[];
+
+  const escolher=v=>{
+    if(v==="__DIV__"){ setMarcados(participantes(atual)); setAbrir(true); return; }
+    onChange(v);
+  };
+  const alternar=nome=>setMarcados(p=>p.includes(nome)?p.filter(x=>x!==nome):[...p,nome]);
+  const confirmar=()=>{ if(marcados.length) onChange(donoCanonico(marcados)); setAbrir(false); };
+
+  return(
+    <>
+      <select value={atual} onChange={e=>escolher(e.target.value)}
+        style={{...sel,width:width||"100%",...style}}>
+        {atual===""&&<option value="">—</option>}
+        {DONOS.map(d=><option key={d} value={d}>{d}</option>)}
+        {pessoas.length>0&&(
+          <optgroup label="Outras pessoas">
+            {pessoas.map(p=><option key={p} value={p}>{p}</option>)}
+          </optgroup>
+        )}
+        {extra.map(d=><option key={d} value={d}>{rotuloDono(d)}</option>)}
+        <option value="__DIV__">Dividir entre…</option>
+      </select>
+
+      {abrir&&(
+        <Modal onClose={()=>setAbrir(false)}>
+          <h3 style={{fontSize:15,fontWeight:600,margin:"0 0 4px",color:C.text}}>Dividir entre</h3>
+          <p style={{fontSize:12,color:C.textMuted,margin:"0 0 14px",lineHeight:1.6}}>
+            O valor é dividido igualmente entre quem estiver marcado.
+          </p>
+          {[...CASAL,...pessoas].map(nome=>(
+            <label key={nome} style={{display:"flex",alignItems:"center",gap:9,padding:"9px 0",
+              borderTop:`1px solid ${C.borderSoft}`,cursor:"pointer",fontSize:13,color:C.text}}>
+              <input type="checkbox" checked={marcados.includes(nome)} onChange={()=>alternar(nome)}
+                style={{accentColor:C.teal600,width:15,height:15,cursor:"pointer"}}/>
+              {nome}
+            </label>
+          ))}
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",
+            marginTop:16,paddingTop:12,borderTop:`1px solid ${C.border}`,gap:8}}>
+            <span style={{fontSize:12,color:C.textDim}}>
+              {marcados.length?`÷${marcados.length} — ${marcados.join(" + ")}`:"ninguém selecionado"}
+            </span>
+            <div style={{display:"flex",gap:6}}>
+              <Btn small onClick={()=>setAbrir(false)}>Cancelar</Btn>
+              <Btn small active disabled={!marcados.length} onClick={confirmar}>Aplicar</Btn>
+            </div>
+          </div>
+        </Modal>
+      )}
+    </>
+  );
+}
+
 function CopyMesModal({dadosMes,mesRef,onClose,onImport}){
   // mesAnterior atravessa a virada de ano — antes, JANEIRO nunca achava DEZEMBRO.
   const prevNome=mesAnterior(mesRef);
@@ -920,7 +1234,7 @@ export default function App(){
   const [dict,setDict]=useState([]);
   const [dadosMes,setDadosMes]=useState({});
   const [filtro,setFiltro]=useState("TODOS");
-  const [copied,setCopied]=useState(false);
+  const [copied,setCopied]=useState("");
   const [showCopy,setShowCopy]=useState(false);
   const [showMeses,setShowMeses]=useState(false);
   const [confirmar,setConfirmar]=useState(null);
@@ -936,6 +1250,11 @@ export default function App(){
   const [showCartoes,setShowCartoes]=useState(false);
   const [parcelaMes,setParcelaMes]=useState(null);
   const [modal,setModal]=useState(null);
+  // Terceiros que usam o cartão. Cadastro reutilizável, para o mesmo nome
+  // escrito de duas formas não virar duas pessoas nos totais.
+  const [pessoas,setPessoas]=useState([]);
+  // `pago` é por mês: {"2026-08":{chave:true}}. Antes era um mapa plano em
+  // memória, então sumia no F5 e vazava entre meses.
   const [pago,setPago]=useState({});
   const [authStatus,setAuthStatus]=useState(()=>getStoredToken()?"ok":"idle");
   const [syncStatus,setSyncStatus]=useState("");
@@ -988,6 +1307,54 @@ export default function App(){
       }
     },1200);
   },[]);
+
+  // Escritores dedicados das abas pequenas. Cada um limpa e reescreve só a
+  // sua, então nunca disputam com syncAll nem com o Apps Script.
+  const gravarSimples=useCallback(async(faixaClear,faixaAppend,linhas,rotulo)=>{
+    if(!getStoredToken()) return;
+    setSyncStatus("salvando...");
+    try{
+      await sheetsClear(faixaClear);
+      if(linhas.length) await sheetsAppend(faixaAppend,linhas);
+      setSyncStatus("salvo ✓");
+      setTimeout(()=>setSyncStatus(""),2500);
+    }catch(e){
+      console.error(`Falha ao gravar ${rotulo}. A aba existe? `+
+        "Rode garantirAbas() no Apps Script.",e);
+      setSyncStatus(`⚠️ ${rotulo} NÃO salvo`);
+    }
+  },[]);
+
+  const pessoasTimer=useRef(null);
+  const syncPessoas=useCallback(lista=>{
+    clearTimeout(pessoasTimer.current);
+    pessoasTimer.current=setTimeout(()=>{
+      gravarSimples("PESSOAS!A2:A","PESSOAS!A2",lista.map(n=>[n]),"pessoas");
+    },1200);
+  },[gravarSimples]);
+
+  const pagoTimer=useRef(null);
+  const syncPago=useCallback(mapa=>{
+    clearTimeout(pagoTimer.current);
+    pagoTimer.current=setTimeout(()=>{
+      const linhas=[];
+      Object.entries(mapa).forEach(([mes,chaves])=>{
+        Object.entries(chaves).forEach(([k,v])=>{ if(v) linhas.push([mes,k]); });
+      });
+      gravarSimples("CHECKLIST_PAGO!A2:B","CHECKLIST_PAGO!A2",linhas,"pagamentos");
+    },1200);
+  },[gravarSimples]);
+
+  /** Marca/desmarca uma chave no mês corrente e agenda a gravação. */
+  const alternarPago=useCallback((mes,chave,valor)=>{
+    setPago(prev=>{
+      const doMes={...(prev[mes]||{})};
+      if(valor) doMes[chave]=true; else delete doMes[chave];
+      const novo={...prev,[mes]:doMes};
+      syncPago(novo);
+      return novo;
+    });
+  },[syncPago]);
 
   // ── Sync dos ajustes (aba própria, escritor único: o app) ─────────────────
   const syncAjustes=useCallback(mapa=>{
@@ -1095,7 +1462,7 @@ export default function App(){
       // não tem essas abas, e o app segue funcionando com os dados legados.
       // Uma aba por vez: com Promise.all, uma única aba faltando derrubaria a
       // leitura inteira e o Open Finance sumiria da tela sem erro visível.
-      let ofTx=[],ofCards=[],ofBills=[],ofAdj={},ofSt={};
+      let ofTx=[],ofCards=[],ofBills=[],ofAdj={},ofSt={},listaPessoas=[],mapaPago={};
       const lerAba=async(faixa,fn)=>{
         try{ return fn(await sheetsGet(faixa)); }
         catch(e){ console.warn(`Aba ${faixa.split("!")[0]} ausente ou ilegível.`,e); }
@@ -1107,12 +1474,22 @@ export default function App(){
         lerAba("OF_AJUSTES!A2:I",   rows=>{rows.filter(r=>r[1]).map(rowToAjuste)
           .forEach(a=>{ofAdj[chaveAjuste(a.tipo,a.refId)]=a;});}),
         lerAba("OF_STATUS!A2:B",    rows=>{rows.filter(r=>r[0]).forEach(r=>{ofSt[r[0]]=r[1];});}),
+        lerAba("PESSOAS!A2:A",      rows=>{
+          listaPessoas=[...new Set(rows.map(r=>String(r[0]||"").trim())
+            .filter(n=>n&&!CASAL.includes(n)&&n!==DIVIDIDO))];}),
+        lerAba("CHECKLIST_PAGO!A2:B",rows=>{rows.forEach(r=>{
+          const m=parseMesRef(r[0]),k=String(r[1]||"");
+          if(!m||!k) return;
+          if(!mapaPago[m]) mapaPago[m]={};
+          mapaPago[m][k]=true;});}),
       ]);
       setOfTransacoes(ofTx);
       setOfCartoes(ofCards);
       setOfFaturas(ofBills);
       setAjustes(ofAdj);
       setOfStatus(ofSt);
+      setPessoas(listaPessoas);
+      setPago(mapaPago);
 
       const mesesOF=new Set(ofTx.map(t=>t.mesRef).filter(Boolean));
       const allMeses=new Set([...Object.keys(byMesRD),...Object.keys(byMesInv),
@@ -1267,24 +1644,34 @@ export default function App(){
 
 
   // ── Checklist calc ────────────────────────────────────────────────────────
+  const pagoDoMes=pago[mesRef]||{};
+  const estaPago=(secao,r)=>!!pagoDoMes[chavePago(mesRef,secao,r)];
+
   const calcChecklist=()=>{
     // Fatura fechada do Open Finance + lançamentos manuais + histórico legado.
     const allCartao=[...ofParaChecklist,...manual,...faturaLegado];
-    let rendaCaulin=0,rendaLuanna=0,despCaulin=0,despLuanna=0;
+    const renda={},desp={},pagoPor={};
+    const soma=(mapa,nome,v)=>{mapa[nome]=(mapa[nome]||0)+v;};
+    // Distribui um valor entre os participantes. Serve para o casal e para
+    // terceiros — a divisão é sempre igual entre quem está no rateio.
+    const ratear=(mapa,r)=>{
+      const p=participantes(r.dono);
+      p.forEach(nome=>soma(mapa,nome,(r.valor||0)/p.length));
+    };
+
     const contasList=[],invList=[];
     contas.forEach(r=>{
       const v=parseBRL(r.valor);
-      if(r.tipo==="RENDA"){if(r.dono==="Caulin")rendaCaulin+=v;else if(r.dono==="Luanna")rendaLuanna+=v;else{rendaCaulin+=v/2;rendaLuanna+=v/2;}return;}
-      if(r.tipo==="INVESTIMENTO"){invList.push({...r,valor:v});return;}
-      contasList.push({...r,valor:v});
+      if(r.tipo==="RENDA"){ratear(renda,{dono:r.dono||DIVIDIDO,valor:v});return;}
+      if(r.tipo==="INVESTIMENTO"){invList.push({...r,valor:v,secao:"INV"});return;}
+      contasList.push({...r,valor:v,secao:"CONTA"});
     });
-    invest.forEach(r=>invList.push({...r,valor:parseBRL(r.valor)}));
+    invest.forEach(r=>invList.push({...r,valor:parseBRL(r.valor),secao:"INV"}));
     [...contasList,...invList].forEach(r=>{
-      const v=r.valor;
-      if(r.dono==="Dividido"){despCaulin+=v/2;despLuanna+=v/2;}
-      else if(r.dono==="Caulin")despCaulin+=v;
-      else if(r.dono==="Luanna")despLuanna+=v;
+      ratear(desp,r);
+      if(estaPago(r.secao,r)) ratear(pagoPor,r);
     });
+
     const cartoesMap={};
     // Sem dono, a linha não pode ser atribuída a ninguém e fica de fora da
     // conta. Contamos para avisar — antes, sumia em silêncio e o checklist
@@ -1296,30 +1683,62 @@ export default function App(){
       if(!cartoesMap[nome])cartoesMap[nome]={fixos:[],parcelados:[],variaveis:[]};
       const sub=r.parcelas==="RECORRENTE"?"fixos":r.parcelas==="PARCELADO"?"parcelados":"variaveis";
       cartoesMap[nome][sub].push(r);
-      const v=r.valor;
-      if(r.dono==="Dividido"){despCaulin+=v/2;despLuanna+=v/2;}
-      else if(r.dono==="Caulin")despCaulin+=v;
-      else if(r.dono==="Luanna")despLuanna+=v;
+      ratear(desp,r);
+      if(estaPago("CARTAO",r)) ratear(pagoPor,r);
     });
-    const pagoCaulin=[...contasList,...invList].filter(r=>pago[r.id]).reduce((a,r)=>a+(r.dono==="Dividido"?r.valor/2:r.dono==="Caulin"?r.valor:0),0);
-    const pagoCartaoCaulin=allCartao.filter(r=>pago[r.id]).reduce((a,r)=>a+(r.dono==="Dividido"?r.valor/2:r.dono==="Caulin"?r.valor:0),0);
-    const saldoCaulin=rendaCaulin-pagoCaulin-pagoCartaoCaulin;
+
+    const saldoDe=nome=>(renda[nome]||0)-(pagoPor[nome]||0);
     const totalFaturaCartoes=Object.entries(cartoesMap).map(([nome,g])=>{
       const rows=[...g.fixos,...g.parcelados,...g.variaveis];
-      return{nome,total:rows.reduce((a,r)=>a+r.valor,0),pagos:rows.filter(r=>pago[r.id]).reduce((a,r)=>a+r.valor,0),fixos:g.fixos,parcelados:g.parcelados,variaveis:g.variaveis};
+      return{nome,total:rows.reduce((a,r)=>a+r.valor,0),
+        pagos:rows.filter(r=>estaPago("CARTAO",r)).reduce((a,r)=>a+r.valor,0),
+        fixos:g.fixos,parcelados:g.parcelados,variaveis:g.variaveis};
     });
-    return{rendaCaulin,rendaLuanna,despCaulin,despLuanna,saldoCaulin,contasList,invList,
-      totalFaturaCartoes,semDono,
-      valorSemDono:semDono.reduce((a,r)=>a+r.valor,0)};
+
+    // Terceiros: quem não é do casal. Vira cobrança, não despesa de vocês.
+    const nomesTerceiros=[...new Set([...contasList,...invList,...allCartao]
+      .flatMap(r=>terceirosDe(r.dono)))].sort();
+    const aReceber=nomesTerceiros.map(nome=>{
+      const itens=[...contasList,...invList,...allCartao]
+        .filter(r=>participantes(r.dono).includes(nome))
+        .map(r=>({...r,valorPessoa:valorDe(r.valor,r.dono,nome)}));
+      return{nome,total:itens.reduce((a,r)=>a+r.valorPessoa,0),itens};
+    });
+
+    return{
+      rendaCaulin:renda.Caulin||0, rendaLuanna:renda.Luanna||0,
+      despCaulin:desp.Caulin||0,   despLuanna:desp.Luanna||0,
+      saldoCaulin:saldoDe("Caulin"),saldoLuanna:saldoDe("Luanna"),
+      contasList,invList,totalFaturaCartoes,semDono,
+      valorSemDono:semDono.reduce((a,r)=>a+r.valor,0),
+      aReceber,totalAReceber:aReceber.reduce((a,x)=>a+x.total,0),
+    };
   };
 
   const syncFalhou=syncStatus.startsWith("erro")||syncStatus.includes("⚠️");
-  const vPessoa=(v,dono,pessoa)=>dono==="Dividido"?v/2:dono===pessoa?v:0;
+  const vPessoa=valorDe;
+  // "(÷2)" virou "(÷3)" e afins agora que terceiros entram no rateio.
+  const rotuloSub=dono=>{
+    const n=participantes(dono).length;
+    return n>1?`(÷${n})`:undefined;
+  };
   const mesesComDados=Object.keys(dadosMes);
   // Anos que têm dados + o ano do mês selecionado, para o seletor sempre poder voltar.
   const anosComDados=[...new Set([...mesesComDados.map(k=>mesPartes(k).ano),mesPartes(mesRef).ano])].filter(a=>!isNaN(a)).sort((a,b)=>b-a);
   const TABS=[{l:"Fatura",i:"💳"},{l:"Parcelas",i:"📅"},{l:"Contas",i:"🏠"},
-    {l:"Investimentos",i:"📈"},{l:"Checklist",i:"✅"}];
+    {l:"Investimentos",i:"📈"},{l:"Checklist",i:"✅"},{l:"Config",i:"⚙️"}];
+
+  // Quantas transações carregadas casam com cada padrão do dicionário — mostra
+  // na aba Config quais padrões estão pegando de fato.
+  const usoDoDict={};
+  dict.forEach(d=>{usoDoDict[d.key]=0;});
+  ofTransacoes.forEach(t=>{
+    const hit=matchDict(t.nome,dict);
+    if(hit) usoDoDict[hit.key]=(usoDoDict[hit.key]||0)+1;
+  });
+
+  const salvarDict=nd=>{setDict(nd);syncAll(dadosMes,nd,"dict");};
+  const salvarPessoas=lista=>{setPessoas(lista);syncPessoas(lista);};
 
   // ── Tela de login ─────────────────────────────────────────────────────────
   if(authStatus!=="ok"){
@@ -1522,7 +1941,7 @@ export default function App(){
                   </EmptyState></div>
                 :<TabelaFatura
                     titulo="Fatura em aberto" subtitulo="ainda não fechou — pode mudar"
-                    linhas={ofAberta} cartoes={cartoesDoMes} isMobile={isMobile}
+                    linhas={ofAberta} cartoes={cartoesDoMes} isMobile={isMobile} pessoas={pessoas}
                     filtro={filtro} setFiltro={setFiltro}
                     mostrarIgnoradas={mostrarIgnoradas} setMostrarIgnoradas={setMostrarIgnoradas}
                     mostrarPagamentos={mostrarPagamentos} setMostrarPagamentos={setMostrarPagamentos}
@@ -1538,7 +1957,7 @@ export default function App(){
                   </EmptyState></div>
                 :<TabelaFatura
                     titulo="Fatura fechada" subtitulo="é o que entra no checklist"
-                    linhas={[...ofFechada,...faturaLegado]} cartoes={cartoesDoMes} isMobile={isMobile}
+                    linhas={[...ofFechada,...faturaLegado]} cartoes={cartoesDoMes} isMobile={isMobile} pessoas={pessoas}
                     filtro={filtro} setFiltro={setFiltro}
                     mostrarIgnoradas={mostrarIgnoradas} setMostrarIgnoradas={setMostrarIgnoradas}
                     mostrarPagamentos={mostrarPagamentos} setMostrarPagamentos={setMostrarPagamentos}
@@ -1570,7 +1989,7 @@ export default function App(){
                         <td style={td}><input value={r.nome} onChange={e=>updM(r.id,"nome",e.target.value)} placeholder="Descrição" style={{...inp,width:110}}/></td>
                         <td style={td}><input value={r.valor||""} onChange={e=>updM(r.id,"valor",parseFloat(e.target.value)||0)} type="number" step="0.01" style={{...inp,width:70}}/></td>
                         <td style={td}><input value={r.cartao} onChange={e=>updM(r.id,"cartao",e.target.value)} placeholder="Nubank…" style={{...inp,width:80}}/></td>
-                        <td style={td}><select value={r.dono} onChange={e=>updM(r.id,"dono",e.target.value)} style={{...sel,width:82}}>{DONOS.map(d=><option key={d}>{d}</option>)}</select></td>
+                        <td style={td}><DonoSelect value={r.dono} pessoas={pessoas} width={96} onChange={v=>updM(r.id,"dono",v)}/></td>
                         <td style={td}><select value={r.parcelas} onChange={e=>updM(r.id,"parcelas",e.target.value)} style={{...sel,width:98}}>{PARC_OPTS.map(d=><option key={d}>{d}</option>)}</select></td>
                         <td style={td}><input value={r.obs} onChange={e=>updM(r.id,"obs",e.target.value)} style={{...inp,width:80}}/></td>
                         <td style={td}><Btn danger small title="Remover" onClick={()=>setConfirmar({titulo:"Remover lançamento?",texto:`“${r.nome||"(sem descrição)"}” será removido de ${mesLabel(mesRef)}.`,onConfirm:()=>rmM(r.id)})}>✕</Btn></td>
@@ -1613,7 +2032,7 @@ export default function App(){
                   <tr key={r.id}>
                     <td style={td}><input value={r.transacao} onChange={e=>updC(r.id,"transacao",e.target.value)} style={{...inp,width:140}}/></td>
                     <td style={td}><input value={r.valor} onChange={e=>updC(r.id,"valor",e.target.value)} placeholder="0,00" style={{...inp,width:85}}/></td>
-                    <td style={td}><select value={r.dono} onChange={e=>updC(r.id,"dono",e.target.value)} style={{...sel,width:85}}>{DONOS.map(d=><option key={d}>{d}</option>)}</select></td>
+                    <td style={td}><DonoSelect value={r.dono} pessoas={pessoas} width={100} onChange={v=>updC(r.id,"dono",v)}/></td>
                     <td style={td}><select value={r.tipo} onChange={e=>updC(r.id,"tipo",e.target.value)} style={{...sel,width:115}}>{TIPOS_CONTA.map(d=><option key={d}>{d}</option>)}</select></td>
                     <td style={td}><input value={r.obs} onChange={e=>updC(r.id,"obs",e.target.value)} style={{...inp,width:95}}/></td>
                     <td style={td}><Btn danger small title="Remover" onClick={()=>setConfirmar({titulo:"Remover conta?",texto:`“${r.transacao||"(sem descrição)"}” será removida de ${mesLabel(mesRef)}.`,onConfirm:()=>rmC(r.id)})}>✕</Btn></td>
@@ -1643,7 +2062,7 @@ export default function App(){
                   <tr key={r.id}>
                     <td style={td}><input value={r.descricao} onChange={e=>updI(r.id,"descricao",e.target.value)} style={{...inp,width:140}}/></td>
                     <td style={td}><input value={r.valor} onChange={e=>updI(r.id,"valor",e.target.value)} placeholder="0,00" style={{...inp,width:85}}/></td>
-                    <td style={td}><select value={r.dono} onChange={e=>updI(r.id,"dono",e.target.value)} style={{...sel,width:85}}>{DONOS.map(d=><option key={d}>{d}</option>)}</select></td>
+                    <td style={td}><DonoSelect value={r.dono} pessoas={pessoas} width={100} onChange={v=>updI(r.id,"dono",v)}/></td>
                     <td style={td}><input value={r.obs} onChange={e=>updI(r.id,"obs",e.target.value)} placeholder="CDB, Tesouro…" style={{...inp,width:130}}/></td>
                     <td style={td}><Btn danger small title="Remover" onClick={()=>setConfirmar({titulo:"Remover investimento?",texto:`“${r.descricao||"(sem descrição)"}” será removido de ${mesLabel(mesRef)}.`,onConfirm:()=>rmI(r.id)})}>✕</Btn></td>
                   </tr>
@@ -1653,17 +2072,29 @@ export default function App(){
           </div>
         )}
 
+        {/* CONFIGURAÇÕES */}
+        {tab===5&&(
+          <PainelConfig dict={dict} onDict={salvarDict}
+            pessoas={pessoas} onPessoas={salvarPessoas}
+            usoDoDict={usoDoDict} isMobile={isMobile}/>
+        )}
+
         {/* CHECKLIST */}
         {tab===4&&(()=>{
-          const{rendaCaulin,rendaLuanna,despCaulin,despLuanna,saldoCaulin,contasList,invList,
-            totalFaturaCartoes,semDono,valorSemDono}=calcChecklist();
+          const{rendaCaulin,rendaLuanna,despCaulin,despLuanna,saldoCaulin,saldoLuanna,
+            contasList,invList,totalFaturaCartoes,semDono,valorSemDono,
+            aReceber,totalAReceber}=calcChecklist();
           const rendaTotal=rendaCaulin+rendaLuanna;
 
-          const CheckRow=({id,label,valor,sub,onClick})=>{
-            const isPago=!!pago[id];
+          // `chave` em vez de `id`: os ids de contas/investimentos são
+          // regenerados a cada carregamento, então o pago não sobreviveria.
+          const CheckRow=({chave,label,valor,sub,onClick})=>{
+            const isPago=!!pagoDoMes[chave];
             return(
               <div style={{display:"flex",alignItems:"center",gap:9,padding:"9px 0",borderTop:`1px solid ${C.borderSoft}`}}>
-                <input type="checkbox" checked={isPago} onChange={()=>setPago(p=>({...p,[id]:!p[id]}))} style={{flexShrink:0,cursor:"pointer",accentColor:C.teal600,width:15,height:15}}/>
+                <input type="checkbox" checked={isPago}
+                  onChange={()=>alternarPago(mesRef,chave,!isPago)}
+                  style={{flexShrink:0,cursor:"pointer",accentColor:C.teal600,width:15,height:15}}/>
                 <span onClick={onClick} style={{flex:1,fontSize:13,textDecoration:isPago?"line-through":"none",color:isPago?C.textMuted:C.text,cursor:onClick?"pointer":"default",userSelect:"none"}}>
                   {label}{sub&&<span style={{fontSize:11,color:C.textMuted,marginLeft:5}}>{sub}</span>}
                   {onClick&&<span style={{fontSize:11,color:C.textMuted,marginLeft:4}}>›</span>}
@@ -1717,6 +2148,7 @@ export default function App(){
                 <MetricCard label="Despesas Caulin" value={fmtBRL(despCaulin)} accent="red" icon="📉"/>
                 <MetricCard label="Despesas Luanna" value={fmtBRL(despLuanna)} accent="purple" icon="📉"/>
                 <MetricCard label="Saldo Caulin" value={fmtBRL(saldoCaulin)} sub="após pagamentos" accent={saldoCaulin>=0?"green":"red"} icon="💵"/>
+                <MetricCard label="Saldo Luanna" value={fmtBRL(saldoLuanna)} sub="após pagamentos" accent={saldoLuanna>=0?"green":"red"} icon="💵"/>
                 {totalEmAberto>0&&(
                   <MetricCard label="Fatura em aberto" value={fmtBRL(totalEmAberto)}
                     sub="ainda não fechou — fora do cálculo" accent="amber" icon="🔴"/>
@@ -1732,6 +2164,34 @@ export default function App(){
                 })}
               </div>
 
+              {aReceber.length>0&&(
+                <div style={{...card,background:C.blue50,border:`1px solid ${C.blue100}`}}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",
+                    marginBottom:6,gap:10,flexWrap:"wrap"}}>
+                    <span style={{fontSize:13,fontWeight:600,color:C.blue600}}>💰 A receber</span>
+                    <strong style={{fontSize:17,color:C.blue600,fontVariantNumeric:"tabular-nums"}}>
+                      {fmtBRL(totalAReceber)}
+                    </strong>
+                  </div>
+                  <p style={{fontSize:11,color:C.blue600,opacity:0.75,margin:"0 0 8px",lineHeight:1.5}}>
+                    Compras de terceiros no cartão de vocês. Já saiu das despesas de
+                    Caulin e Luanna — é cobrança, não gasto do casal.
+                  </p>
+                  {aReceber.map(p=>(
+                    <button key={p.nome} className="gf-btn"
+                      onClick={()=>setModal({title:`A receber — ${p.nome}`,rows:p.itens,pessoa:p.nome})}
+                      style={{display:"flex",width:"100%",justifyContent:"space-between",
+                        alignItems:"center",gap:10,padding:"9px 0",background:"transparent",
+                        border:"none",borderTop:`1px solid ${C.blue100}`,cursor:"pointer",
+                        fontSize:13,color:C.text}}>
+                      <span>{p.nome}<span style={{color:C.textMuted,marginLeft:6,fontSize:11}}>
+                        {p.itens.length} item{p.itens.length===1?"":"s"} ›</span></span>
+                      <strong style={{fontVariantNumeric:"tabular-nums"}}>{fmtBRL(p.total)}</strong>
+                    </button>
+                  ))}
+                </div>
+              )}
+
               {/* Checklists — empilham no mobile em vez de espremer duas colunas */}
               <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:12}}>
                 {["Caulin","Luanna"].map(pessoa=>{
@@ -1746,14 +2206,14 @@ export default function App(){
                       {invList.filter(r=>vPessoa(r.valor,r.dono,pessoa)>0).length>0&&<>
                         <SectionLabel>Investimentos</SectionLabel>
                         {invList.filter(r=>vPessoa(r.valor,r.dono,pessoa)>0).map(r=>(
-                          <CheckRow key={r.id} id={r.id} label={r.descricao||r.transacao} valor={vPessoa(r.valor,r.dono,pessoa)} sub={r.dono==="Dividido"?"(÷2)":undefined}/>
+                          <CheckRow key={r.id} chave={chavePago(mesRef,"INV",r)} label={r.descricao||r.transacao} valor={vPessoa(r.valor,r.dono,pessoa)} sub={rotuloSub(r.dono)}/>
                         ))}
                       </>}
 
                       {contasList.filter(r=>vPessoa(r.valor,r.dono,pessoa)>0).length>0&&<>
                         <SectionLabel>Contas</SectionLabel>
                         {contasList.filter(r=>vPessoa(r.valor,r.dono,pessoa)>0).map(r=>(
-                          <CheckRow key={r.id} id={r.id} label={r.transacao} valor={vPessoa(r.valor,r.dono,pessoa)} sub={r.dono==="Dividido"?"(÷2)":undefined}/>
+                          <CheckRow key={r.id} chave={chavePago(mesRef,"CONTA",r)} label={r.transacao} valor={vPessoa(r.valor,r.dono,pessoa)} sub={rotuloSub(r.dono)}/>
                         ))}
                       </>}
 
@@ -1767,17 +2227,17 @@ export default function App(){
                             {/* mesRef na chave: sem ele, marcar "Fixos" em agosto
                                 deixava setembro já marcado ao trocar de mês. */}
                             {[
-                              {key:`fixos-${mesRef}-${nome}-${pessoa}`,label:"Fixos",rows:fixos},
-                              {key:`parc-${mesRef}-${nome}-${pessoa}`,label:"Parcelados",rows:parcelados},
-                              {key:`var-${mesRef}-${nome}-${pessoa}`,label:"Variáveis",rows:variaveis},
+                              {key:chaveGrupo(mesRef,nome,pessoa,"fixos"),label:"Fixos",rows:fixos},
+                              {key:chaveGrupo(mesRef,nome,pessoa,"parc"),label:"Parcelados",rows:parcelados},
+                              {key:chaveGrupo(mesRef,nome,pessoa,"var"),label:"Variáveis",rows:variaveis},
                             ].map(g=>{
                               const gRows=g.rows.filter(r=>vPessoa(r.valor,r.dono,pessoa)>0);
                               if(!gRows.length) return null;
                               const gTotal=gRows.reduce((a,r)=>a+vPessoa(r.valor,r.dono,pessoa),0);
-                              const gPago=!!pago[g.key];
+                              const gPago=!!pagoDoMes[g.key];
                               return(
                                 <div key={g.key} style={{display:"flex",alignItems:"center",gap:9,padding:"9px 0",borderTop:`1px solid ${C.borderSoft}`}}>
-                                  <input type="checkbox" checked={gPago} onChange={()=>{setPago(p=>({...p,[g.key]:!gPago}));gRows.forEach(r=>setPago(p=>({...p,[r.id]:!gPago})));}} style={{flexShrink:0,cursor:"pointer",accentColor:C.teal600,width:15,height:15}}/>
+                                  <input type="checkbox" checked={gPago} onChange={()=>{alternarPago(mesRef,g.key,!gPago);gRows.forEach(r=>alternarPago(mesRef,chavePago(mesRef,"CARTAO",r),!gPago));}} style={{flexShrink:0,cursor:"pointer",accentColor:C.teal600,width:15,height:15}}/>
                                   <span onClick={()=>setModal({title:`${nome} — ${g.label} (${pessoa})`,rows:gRows,pessoa})} style={{flex:1,fontSize:13,fontWeight:500,textDecoration:gPago?"line-through":"none",color:gPago?C.textMuted:accent.color,cursor:"pointer",userSelect:"none"}}>
                                     {g.label} <span style={{fontSize:11,color:C.textMuted}}>›</span>
                                   </span>
@@ -1793,13 +2253,32 @@ export default function App(){
                 })}
               </div>
 
-              <button className="gf-btn" onClick={()=>{
-                const{rendaCaulin,rendaLuanna,despCaulin,despLuanna,saldoCaulin,totalFaturaCartoes}=calcChecklist();
-                const txt=[`📊 CHECK LIST — ${mesLabel(mesRef)}`,"",`💰 Renda total → ${fmtBRL(rendaCaulin+rendaLuanna)}`,`   Caulin: ${fmtBRL(rendaCaulin)} · Luanna: ${fmtBRL(rendaLuanna)}`,"",`📉 Despesas`,`   Caulin: ${fmtBRL(despCaulin)} · Luanna: ${fmtBRL(despLuanna)}`,"",`💵 Saldo Caulin → ${fmtBRL(saldoCaulin)}`,"",`💳 Faturas`,...totalFaturaCartoes.map(c=>`   ${c.nome}: ${fmtBRL(c.total)}`)].join("\n");
-                navigator.clipboard.writeText(txt).then(()=>{setCopied(true);setTimeout(()=>setCopied(false),2000);});
-              }} style={{width:"100%",marginTop:16,padding:"13px",borderRadius:10,border:`1px solid ${copied?C.green100:C.teal100}`,background:copied?C.green50:C.teal50,color:copied?C.green600:C.teal600,cursor:"pointer",fontSize:14,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center",gap:8,transition:"background .2s,color .2s"}}>
-                {copied?"✅ Copiado!":"📱 Copiar resumo para WhatsApp"}
-              </button>
+              {/* Um resumo por pessoa: cada uma recebe só o que lhe cabe, com
+                  os itens já divididos. O resumo conjunto virava um texto que
+                  ninguém conseguia usar para pagar as próprias contas. */}
+              <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",
+                gap:10,marginTop:16}}>
+                {CASAL.map(pessoa=>{
+                  const eu=copied===pessoa;
+                  const cor=pessoa==="Caulin"?ACCENTS.teal:ACCENTS.purple;
+                  return(
+                    <button key={pessoa} className="gf-btn"
+                      onClick={()=>{
+                        navigator.clipboard.writeText(
+                          resumoWhatsApp(pessoa,calcChecklist(),mesRef,vPessoa)
+                        ).then(()=>{setCopied(pessoa);setTimeout(()=>setCopied(""),2000);});
+                      }}
+                      style={{width:"100%",padding:"13px",borderRadius:10,
+                        border:`1px solid ${eu?C.green100:cor.border}`,
+                        background:eu?C.green50:cor.bg,color:eu?C.green600:cor.color,
+                        cursor:"pointer",fontSize:14,fontWeight:700,display:"flex",
+                        alignItems:"center",justifyContent:"center",gap:8,
+                        transition:"background .2s,color .2s"}}>
+                      {eu?"✅ Copiado!":`📱 Resumo da ${pessoa}`}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           );
         })()}

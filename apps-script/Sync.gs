@@ -127,6 +127,22 @@ function _derivarMes(tx, mapaFaturas, diaFechamento, diaVencimento) {
     }
   }
 
+  // AGENDADA — parcela futura que o banco já programou.
+  //
+  // Verificado contra dados reais: as parcelas futuras do Itaú chegam datadas
+  // com o VENCIMENTO da fatura em que vão cair (10/09, 13/10 — e 13/10 é dia
+  // útil porque 10/10/2026 cai num sábado), não com a data da compra. Aplicar
+  // a regra de ciclo nelas empurra tudo um mês para a frente: o Airbnb tinha
+  // 01/06 em agosto e 02/06 em OUTUBRO, pulando setembro inteiro.
+  //
+  // Exige as DUAS condições — ser parcela e estar no futuro. Só "data no
+  // futuro" seria largo demais: pega compra com data alguns dias à frente,
+  // que é compra de verdade e precisa do ciclo.
+  var dt = new Date(tx.date);
+  if (Number(meta.totalInstallments) > 1 && !isNaN(dt.getTime()) && dt.getTime() > Date.now()) {
+    return { mes: _mesKey(dt.getUTCFullYear(), dt.getUTCMonth()), origem: 'AGENDADA' };
+  }
+
   if (diaFechamento) {
     var m = _mesPorCiclo(tx.date, diaFechamento, diaVencimento);
     if (m) return { mes: m, origem: 'CICLO' };

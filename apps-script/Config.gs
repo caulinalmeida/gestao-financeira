@@ -59,6 +59,17 @@ var COLS_AJUSTES = [
   'mes_ref_override','apelido','fingerprint'
 ];
 
+// Terceiros que usam o cartão do casal. Cadastro, para o mesmo nome escrito de
+// duas formas não virar duas pessoas nos totais. Escrita pelo app.
+var ABA_PESSOAS  = 'PESSOAS';
+var COLS_PESSOAS = ['nome'];
+
+// O que já foi marcado como pago no checklist. A chave é derivada do conteúdo
+// da linha, não do id — contas e investimentos recebem id novo a cada
+// carregamento, então persistir por id não sobreviveria ao F5. Escrita pelo app.
+var ABA_PAGO  = 'CHECKLIST_PAGO';
+var COLS_PAGO = ['mes_ref','chave'];
+
 function _props() {
   return PropertiesService.getScriptProperties();
 }

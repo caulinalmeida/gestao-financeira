@@ -46,6 +46,9 @@ const alvos = [
   'function nomeCartao(', 'function classificaAuto(',
   'function mergeFatura(', 'function totalFatura(',
   'function mesProximo(', 'function chaveCompra(', 'function projetarParcelas(',
+  'function semSufixoParcela(',
+  'function participantes(', 'function valorDe(', 'function donoCanonico(',
+  'function terceirosDe(', 'function chavePago(', 'function chaveGrupo(',
 ];
 const pedacos = [];
 let faltou = [];
@@ -57,9 +60,11 @@ const linhas = [
   extrairLinha('const MESES ='),
   extrairLinha('const ANO_LEGADO ='),
   extrairLinha('const chaveAjuste='),
+  extrairLinha('const CASAL ='),
+  extrairLinha('const DIVIDIDO ='),
 ].filter(Boolean);
 ok('todas as funções alvo foram encontradas', faltou.length === 0, faltou.join(', '));
-ok('constantes MESES/ANO_LEGADO/chaveAjuste encontradas', linhas.length === 3);
+ok('constantes MESES/ANO_LEGADO/chaveAjuste/CASAL/DIVIDIDO encontradas', linhas.length === 5);
 
 const ctx = {};
 vm.createContext(ctx);
@@ -358,6 +363,138 @@ const projP = (txs, aj, dic, base) =>
   ok('itens do mês somam o total do mês',
      r.porMes.every(m => Math.abs(m.itens.reduce((a, i) => a + i.valor, 0) - m.total) < 0.001));
   eq('falta total = 30 + 50', r.totalFalta, 80);
+}
+
+// ── 11. Sufixo de parcela na descrição (bug real do Itaú) ───────────────────
+console.log('\n=== 11. semSufixoParcela ===');
+{
+  const ss = ctx.semSufixoParcela;
+  // Descrições exatamente como vieram da fatura real.
+  eq('SAMSUNG NO ITAU   06/21', ss('SAMSUNG NO ITAU   06/21', 6, 21), 'SAMSUNG NO ITAU');
+  eq('AIRBNB * HMP3QS4Y501/06', ss('AIRBNB * HMP3QS4Y501/06', 1, 6), 'AIRBNB * HMP3QS4Y5');
+  eq('MERCADOLIVRE*MAIAR03/04', ss('MERCADOLIVRE*MAIAR03/04', 3, 4), 'MERCADOLIVRE*MAIAR');
+  eq('aliexpress        03/05', ss('aliexpress        03/05', 3, 5), 'aliexpress');
+  eq('OTICA MAX FRBSAO P01/07', ss('OTICA MAX FRBSAO P01/07', 1, 7), 'OTICA MAX FRBSAO P');
+  eq('DL*Alipay MAGAZI  11/12', ss('DL*Alipay MAGAZI  11/12', 11, 12), 'DL*Alipay MAGAZI');
+
+  // Só corta quando os números batem com a parcela conhecida.
+  eq('números que não batem ficam', ss('LOJA 03/04', 5, 9), 'LOJA 03/04');
+  eq('avulsa não é tocada', ss('POSTO SHELL 01/06', 0, 0), 'POSTO SHELL 01/06');
+  eq('descrição que vira vazia é preservada', ss('06/21', 6, 21), '06/21');
+  eq('sem sufixo passa direto', ss('NETFLIX.COM', 3, 12), 'NETFLIX.COM');
+  eq('null é seguro', ss(null, 1, 2), '');
+
+  // O que o bug causava: parcelas da MESMA compra em compras diferentes.
+  const t = (n, tot, valor, desc) => ({
+    id: 'x' + n, accountId: 'acc-1', natureza: 'COMPRA', mesRef: '2026-0' + n,
+    nome: ctx.semSufixoParcela(desc, n, tot), valor, parcelaNum: n, parcelaTotal: tot,
+    valorTotal: 0, fingerprint: 'f' + n, status: 'POSTED',
+  });
+  const samsung = [
+    t(6, 21, 53.8, 'SAMSUNG NO ITAU   06/21'),
+    t(7, 21, 53.8, 'SAMSUNG NO ITAU   07/21'),
+    t(8, 21, 53.8, 'SAMSUNG NO ITAU   08/21'),
+  ];
+  const chaves = new Set(samsung.map(ctx.chaveCompra));
+  eq('3 parcelas da mesma compra → 1 chave só', chaves.size, 1);
+
+  const r11 = ctx.projetarParcelas(samsung, {}, [], [{ accountId: 'acc-1', nome: 'Black' }],
+                                   '2026-08', 12);
+  eq('vira UMA compra, não três', r11.compras.length, 1);
+  // A 08 cai no próprio mês-base, então entra no que falta: 08 + as 13 projetadas.
+  eq('  âncora é a 08; restam 14 (ela mais 13 projetadas)', r11.compras[0].restantes, 14);
+  eq('  projetadas são 13', r11.compras[0].projetadas, 13);
+  eq('  termina 13 meses depois de ago/26', r11.compras[0].mesFinal, '2027-09');
+  eq('  falta 14 × 53,80 (antes as 3 compras somavam em triplicata)',
+     Math.round(r11.compras[0].falta * 100) / 100, Math.round(14 * 53.8 * 100) / 100);
+}
+
+// ── 12. Rateio com terceiros ────────────────────────────────────────────────
+console.log('\n=== 12. participantes / valorDe ===');
+{
+  const P = ctx.participantes, V = ctx.valorDe;
+  eq('uma pessoa', P('Caulin'), ['Caulin']);
+  eq('"Dividido" é apelido do casal', P('Dividido'), ['Caulin', 'Luanna']);
+  eq('terceiro sozinho', P('Rafael'), ['Rafael']);
+  eq('casal + terceiro', P('Caulin+Rafael'), ['Caulin', 'Rafael']);
+  eq('os três', P('Caulin+Luanna+Rafael'), ['Caulin', 'Luanna', 'Rafael']);
+  eq('espaços em volta são tolerados', P(' Caulin + Rafael '), ['Caulin', 'Rafael']);
+  eq('repetido não conta duas vezes', P('Caulin+Caulin'), ['Caulin']);
+  eq('vazio', P(''), []);
+  eq('null', P(null), []);
+
+  eq('100% de quem é dono', V(100, 'Caulin', 'Caulin'), 100);
+  eq('quem não participa recebe 0', V(100, 'Caulin', 'Luanna'), 0);
+  eq('dividido entre o casal → metade', V(100, 'Dividido', 'Luanna'), 50);
+  eq('dividido entre três → um terço', V(300, 'Caulin+Luanna+Rafael', 'Rafael'), 100);
+  eq('casal fora quando é só do terceiro', V(80, 'Rafael', 'Caulin'), 0);
+  eq('terceiro no rateio com um do casal', V(80, 'Caulin+Rafael', 'Rafael'), 40);
+
+  // A soma das partes tem que fechar o total — senão dinheiro some do checklist.
+  const casos = ['Caulin', 'Luanna', 'Dividido', 'Rafael', 'Caulin+Rafael',
+                 'Caulin+Luanna+Rafael'];
+  const fecha = casos.every(d => {
+    const soma = P(d).reduce((a, n) => a + V(999, d, n), 0);
+    return Math.abs(soma - 999) < 0.0001;
+  });
+  ok('a soma das partes fecha o total em todos os arranjos', fecha);
+
+  console.log('\n=== 12b. donoCanonico / terceirosDe ===');
+  const DC = ctx.donoCanonico;
+  eq('casal inteiro volta a ser "Dividido"', DC(['Caulin', 'Luanna']), 'Dividido');
+  eq('  na ordem inversa também', DC(['Luanna', 'Caulin']), 'Dividido');
+  eq('um só fica um só', DC(['Caulin']), 'Caulin');
+  eq('três viram lista', DC(['Caulin', 'Luanna', 'Rafael']), 'Caulin+Luanna+Rafael');
+  eq('casal + terceiro NÃO vira Dividido', DC(['Caulin', 'Rafael']), 'Caulin+Rafael');
+  // Ida e volta: canonizar o que participantes() devolveu não muda nada.
+  ok('donoCanonico(participantes(x)) é estável',
+     casos.every(d => DC(P(d)) === DC(P(DC(P(d))))));
+
+  const T = ctx.terceirosDe;
+  eq('só o casal → nenhum terceiro', T('Dividido'), []);
+  eq('terceiro sozinho', T('Rafael'), ['Rafael']);
+  eq('mistura', T('Caulin+Luanna+Rafael'), ['Rafael']);
+}
+
+// ── 13. Chave estável do "pago" ─────────────────────────────────────────────
+console.log('\n=== 13. chavePago (tem que sobreviver ao F5) ===');
+{
+  const CP = ctx.chavePago;
+  // Contas e investimentos ganham id novo a cada load: a chave não pode usá-lo.
+  const conta1 = { id: 'abc123', transacao: 'Aluguel', valor: 2500 };
+  const conta2 = { id: 'zzz999', transacao: 'Aluguel', valor: 2500 };
+  eq('mesmo conteúdo, ids diferentes → mesma chave',
+     CP('2026-08', 'CONTA', conta1), CP('2026-08', 'CONTA', conta2));
+  ok('  e a chave não contém o id',
+     CP('2026-08', 'CONTA', conta1).indexOf('abc123') === -1);
+
+  ok('mês diferente → chave diferente',
+     CP('2026-08', 'CONTA', conta1) !== CP('2026-09', 'CONTA', conta1));
+  ok('seção diferente → chave diferente',
+     CP('2026-08', 'CONTA', conta1) !== CP('2026-08', 'INV', conta1));
+  ok('valor diferente → chave diferente',
+     CP('2026-08', 'CONTA', conta1) !== CP('2026-08', 'CONTA', { ...conta1, valor: 2600 }));
+  ok('acento e caixa não mudam a chave',
+     CP('2026-08', 'CONTA', { transacao: 'Água', valor: 90 }) ===
+     CP('2026-08', 'CONTA', { transacao: 'AGUA', valor: 90 }));
+
+  // Transação do Open Finance usa o id do Pluggy, que é estável.
+  const tx = { id: 'tx-777', origem: 'OPEN_FINANCE', nome: 'IFOOD', valor: 50 };
+  eq('transação do OF usa o id do Pluggy', CP('2026-08', 'CARTAO', tx), 'TX|tx-777');
+  ok('  e não muda se o mês da tela mudar',
+     CP('2026-09', 'CARTAO', tx) === CP('2026-08', 'CARTAO', tx));
+
+  const CG = ctx.chaveGrupo;
+  ok('grupo isola por mês',
+     CG('2026-08', 'Black', 'Caulin', 'fixos') !== CG('2026-09', 'Black', 'Caulin', 'fixos'));
+  ok('grupo isola por pessoa',
+     CG('2026-08', 'Black', 'Caulin', 'fixos') !== CG('2026-08', 'Black', 'Luanna', 'fixos'));
+  ok('grupo isola por tipo',
+     CG('2026-08', 'Black', 'Caulin', 'fixos') !== CG('2026-08', 'Black', 'Caulin', 'var'));
+  ok('grupo isola por cartão',
+     CG('2026-08', 'Black', 'Caulin', 'fixos') !== CG('2026-08', 'Platinum', 'Caulin', 'fixos'));
+  ok('chave de grupo não colide com chave de linha',
+     CG('2026-08', 'Black', 'Caulin', 'fixos') !== CP('2026-08', 'CONTA', conta1));
 }
 
 console.log('\n' + '='.repeat(52));
