@@ -50,7 +50,7 @@ const alvos = [
   'function participantes(', 'function valorDe(', 'function donoCanonico(',
   'function terceirosDe(', 'function chavePago(', 'function chaveGrupo(',
   'function cmpValor(', 'function ordenarLinhas(', 'function chaveData(',
-  'function mesFaturaDe(', 'function diaFechamentoPadrao(', 'function mesAtualKey(',
+  'function diaDoCartao(', 'function mesAtualKey(',
 ];
 const pedacos = [];
 let faltou = [];
@@ -692,45 +692,49 @@ console.log('\n=== 14c. COLS_* × ACESSORES_* ===');
   }
 }
 
-// ── 15. Mês atual = fatura aberta, não o calendário ──────────────────────────
-console.log('\n=== 15. mesFaturaDe / mesAtualKey ===');
+// ── 15. Mês atual = a fatura que ainda se vai pagar ──────────────────────────
+console.log('');
+console.log('=== 15. diaDoCartao / mesAtualKey ===');
 {
-  const MF = ctx.mesFaturaDe;
-  // Itaú fecha dia 3. Foi o caso real: em 16/08 o app abria em AGOSTO, fatura
-  // já fechada, em vez de SETEMBRO, que é a que está sendo montada.
-  eq('compra depois do fechamento vai para a fatura seguinte',
-     MF(new Date(2026, 7, 16), 3), '2026-09');
-  eq('compra antes do fechamento fica na fatura do mês',
-     MF(new Date(2026, 7, 2), 3), '2026-08');
-  eq('compra NO dia do fechamento já é a seguinte (>=, não >)',
-     MF(new Date(2026, 7, 3), 3), '2026-09');
-  eq('dezembro vira janeiro do ano seguinte',
-     MF(new Date(2026, 11, 20), 3), '2027-01');
-  eq('sem dia de fechamento cai no mês do calendário',
-     MF(new Date(2026, 7, 16), 0), '2026-08');
-  eq('data inválida devolve null', MF('não é data', 3), null);
-
-  const DF = ctx.diaFechamentoPadrao;
-  eq('lê o dia de fechamento dos cartões',
-     DF([{ fechamento: '3' }, { fechamento: '3' }]), 3);
+  const DC = ctx.diaDoCartao;
+  eq('lê o vencimento dos cartões',
+     DC([{ vencimento: '10' }, { vencimento: '10' }], 'vencimento'), 10);
+  eq('lê o fechamento pelo mesmo caminho',
+     DC([{ fechamento: '3' }], 'fechamento'), 3);
   eq('vence o mais frequente',
-     DF([{ fechamento: '3' }, { fechamento: '3' }, { fechamento: '10' }]), 3);
-  eq('empate resolve pelo menor dia',
-     DF([{ fechamento: '10' }, { fechamento: '3' }]), 3);
-  eq('sem cartões devolve 0', DF([]), 0);
-  eq('undefined é seguro', DF(undefined), 0);
-  eq('valor inválido é ignorado', DF([{ fechamento: 'x' }, { fechamento: '3' }]), 3);
+     DC([{ vencimento: '10' }, { vencimento: '10' }, { vencimento: '5' }], 'vencimento'), 10);
+  eq('empate resolve pelo menor',
+     DC([{ vencimento: '10' }, { vencimento: '5' }], 'vencimento'), 5);
+  eq('sem cartões devolve 0', DC([], 'vencimento'), 0);
+  eq('undefined é seguro', DC(undefined, 'vencimento'), 0);
+  eq('campo ausente devolve 0', DC([{ fechamento: '3' }], 'vencimento'), 0);
 
-  // Não dá para fixar a data de hoje aqui, mas dá para provar a relação: com
-  // fechamento dia 1, todo dia do mês cai na fatura seguinte.
+  // O caso real que motivou a defesa: o Sheets devolvia o dia 3 como a data
+  // "1900-01-02", parseInt dava 1900, e o valor tinha que ser descartado em
+  // vez de virar mês errado.
+  eq('valor fora de 1..31 é descartado',
+     DC([{ vencimento: '1900-01-09' }, { vencimento: '10' }], 'vencimento'), 10);
+  eq('só lixo devolve 0', DC([{ vencimento: '1900-01-09' }], 'vencimento'), 0);
+
+  // mesAtualKey depende de "hoje", então o teste fixa a RELAÇÃO entre a data de
+  // hoje e o dia de vencimento, que é o que a regra realmente decide.
   const hoje = new Date();
-  const calendario = ctx.mesKey(hoje.getFullYear(), hoje.getMonth());
-  eq('sem cartão sincronizado, mesAtualKey = mês do calendário',
-     ctx.mesAtualKey([]), calendario);
-  ok('com fechamento dia 1, mesAtualKey adianta para a fatura seguinte',
-     ctx.mesAtualKey([{ fechamento: '1' }]) === ctx.mesProximo(calendario));
-  ok('com fechamento dia 31, mesAtualKey quase sempre é o mês corrente',
-     hoje.getDate() >= 31 || ctx.mesAtualKey([{ fechamento: '31' }]) === calendario);
+  const dia = hoje.getDate();
+  const mesCal = ctx.mesKey(hoje.getFullYear(), hoje.getMonth());
+
+  eq('sem cartão sincronizado, cai no mês do calendário',
+     ctx.mesAtualKey([]), mesCal);
+  ok('vencimento no fim do mês mantém o app no mês corrente',
+     dia > 31 || ctx.mesAtualKey([{ vencimento: '31' }]) === mesCal);
+  ok('vencimento já passado joga para o mês seguinte',
+     dia <= 1 || ctx.mesAtualKey([{ vencimento: '1' }]) === ctx.mesProximo(mesCal));
+
+  // A regressão que este desenho conserta: ancorado no FECHAMENTO (3), o dia 4
+  // de setembro caía em OUTUBRO. Ancorado no VENCIMENTO (10), fica em setembro
+  // — a fatura que se está fechando.
+  ok('entre o fechamento e o vencimento, o app fica na fatura a pagar',
+     dia < 3 || dia > 10 ||
+     ctx.mesAtualKey([{ fechamento: '3', vencimento: '10' }]) === mesCal);
 }
 
 console.log('\n' + '='.repeat(52));

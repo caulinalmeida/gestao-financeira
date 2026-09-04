@@ -60,48 +60,47 @@ function mesAnterior(key){const{ano,mesIdx}=mesPartes(key);return mesIdx===0?mes
 function mesProximo(key){const{ano,mesIdx}=mesPartes(key);return mesIdx===11?mesKey(ano+1,0):mesKey(ano,mesIdx+1);}
 
 /**
- * Em que fatura cai uma compra feita nesta data.
+ * Dia do mês predominante entre os cartões, num dos campos de ciclo.
  *
- * Mesma convenção do sincronizador (`_mesPorCiclo` em Sync.gs): a compra feita
- * NO dia do fechamento já entra na fatura seguinte, então o teste é `>=`.
+ * Predominante e não o primeiro: com dois cartões o valor tem que ser o mesmo,
+ * mas se um vier sujo o outro salva. Valor fora de 1..31 é descartado — foi o
+ * que evitou estrago quando o Sheets devolvia "1900-01-02" no lugar de "3".
  */
-function mesFaturaDe(data,diaFechamento){
-  const d=data instanceof Date?data:new Date(data);
-  if(isNaN(d.getTime())) return null;
-  let ano=d.getFullYear(),mes=d.getMonth();
-  if(diaFechamento>0&&d.getDate()>=diaFechamento) mes+=1;
-  while(mes>11){mes-=12;ano+=1;}
-  return mesKey(ano,mes);
-}
-
-/** Dia de fechamento predominante entre os cartões sincronizados. */
-function diaFechamentoPadrao(cartoes){
+function diaDoCartao(cartoes,campo){
   const cont={};
   (cartoes||[]).forEach(c=>{
-    const d=parseInt(c.fechamento,10);
+    const d=parseInt(c[campo],10);
     if(d>=1&&d<=31) cont[d]=(cont[d]||0)+1;
   });
   const dias=Object.keys(cont).map(Number);
   if(!dias.length) return 0;
-  // Empate resolve pelo menor dia: adiantar erra menos que atrasar, porque a
-  // fatura que interessa é sempre a que está sendo montada agora.
+  // Empate pelo menor dia: adiantar erra menos que atrasar.
   return dias.sort((a,b)=>cont[b]-cont[a]||a-b)[0];
 }
 
 /**
- * O "mês atual" do app é o da fatura ABERTA, não o do calendário.
+ * O mês que o app abre é o da fatura QUE VOCÊ AINDA VAI PAGAR.
  *
- * Com o Itaú fechando dia 3, uma compra de 16/08 cai na fatura que fecha em
- * 03/09 e vence em 10/09 — setembro. Usar o mês do calendário abria o app em
- * agosto, uma fatura já fechada, bem no mês em que se está gastando.
+ * A âncora é o VENCIMENTO, não o fechamento — e a diferença não é sutil.
+ * Com o Itaú (fecha 3, vence 10):
  *
- * Sem cartão sincronizado (antes do primeiro load) cai no mês do calendário,
- * que é o melhor palpite disponível.
+ *   16/08  passou do vencimento de agosto  -> setembro   (a que se acumula)
+ *   04/09  ainda não venceu setembro       -> setembro   (a que se vai pagar)
+ *   11/09  setembro já foi pago            -> outubro
+ *
+ * Ancorar no fechamento respondia outra pergunta — "onde cai uma compra feita
+ * hoje" — e jogava o app em outubro no dia 4 de setembro, justamente na semana
+ * entre fechar e pagar, que é quando se fecha as contas do mês.
+ *
+ * Sem cartão sincronizado cai no mês do calendário, o melhor palpite possível.
  */
 function mesAtualKey(cartoes){
   const hoje=new Date();
-  return mesFaturaDe(hoje,diaFechamentoPadrao(cartoes))
-    ||mesKey(hoje.getFullYear(),hoje.getMonth());
+  const venc=diaDoCartao(cartoes,"vencimento");
+  let ano=hoje.getFullYear(),mes=hoje.getMonth();
+  if(venc>0&&hoje.getDate()>venc) mes+=1;
+  while(mes>11){mes-=12;ano+=1;}
+  return mesKey(ano,mes);
 }
 
 // ── Google Auth ───────────────────────────────────────────────────────────────

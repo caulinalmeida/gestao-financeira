@@ -192,7 +192,7 @@ Projeta as parcelas futuras a partir de `OF_TRANSACOES`, **sem armazenar nada no
 - `category`/`merchant` do Pluggy são enriquecimento de plano pago e vêm nulos — por isso o dicionário continua sendo o cérebro da categorização
 
 ### Meses
-- **"Mês atual" é o da fatura ABERTA, não o do calendário.** Com o Itaú fechando dia 3, uma compra de 16/08 cai na fatura que fecha em 03/09 — setembro. `mesAtualKey(ofCartoes)` deriva isso do dia de fechamento dos cartões (`mesFaturaDe`), com a mesma regra `>=` do sincronizador. Sem cartão sincronizado, cai no mês do calendário.
+- **O mês que o app abre é o da fatura QUE AINDA SE VAI PAGAR** — âncora no **vencimento**, não no fechamento. Com o Itaú (fecha 3, vence 10): dia 16/08 já passou do vencimento de agosto, então setembro; dia 04/09 ainda não venceu setembro, então setembro; dia 11/09 já foi pago, então outubro. `mesAtualKey(ofCartoes)` usa `diaDoCartao(cartoes,"vencimento")`. Ancorar no fechamento responde outra pergunta ("onde cai uma compra feita hoje") e jogava o app em outubro no dia 4 de setembro, bem na semana entre fechar e pagar — que é quando se fecha as contas.
 - **Piso de histórico**: `MES_MINIMO` em `Config.gs` (hoje `2026-08`). Nada anterior é gravado ou preservado nas abas `OF_*`. Existe porque a janela de sync alcança 210 dias para trás — sem o piso, todo sync ressuscitaria o que `limparHistorico()` acabou de apagar. O piso **não corta o futuro**: parcelas de 2027 continuam entrando, e são elas que fazem a aba Parcelas projetar.
 - A chave é **`ANO-MÊS`** (`"2026-08"`), não mais o nome do mês. O modelo antigo tinha 12 baldes fixos e JANEIRO/2027 sobrescreveria JANEIRO/2026.
 - `parseMesRef()` aceita os dois formatos, então dados legados continuam legíveis
@@ -278,6 +278,9 @@ A `chave` vem do **conteúdo** da linha, não do id — contas e investimentos r
 | `investigarParcelas()` | Agrupa as compras parceladas e diagnostica projeção errada |
 | `diagnosticoOpenFinance()` | Fotografia dos três saltos + campos crus do item |
 | `historicoSync()` | A que horas o Pluggy visita o banco, pelos dados de `OF_SYNC_LOG` |
+| `investigarFaturaSumida()` | Separa lacuna do Pluggy × mês errado × perda na escrita, transação a transação |
+| `conferirPaginacao()` | Página a página do `/v2/transactions`, contra o total declarado pela API |
+| `sondarLacuna()` | Mesma pergunta em três formas, para saber se o buraco é da API ou da nossa chamada |
 | `testarWidgetUpdate()` | Se o widget do Pluggy Connect cabe no app (hoje: não, 403) |
 | `testarConexao()` | Valida credenciais e lista os cartões conectados |
 | `sincronizarAgora()` | Sync completo, na hora |
@@ -309,6 +312,8 @@ O botão Run do Apps Script **não passa parâmetros** — por isso existe `Atal
 15. **"Pago" sumia no F5 e vazava entre meses** — era `useState` puro com chave sem mês. Resolvido com `CHECKLIST_PAGO` e chave derivada do conteúdo.
 16. **App abria no mês do calendário** — em 16/08 caía em agosto, uma fatura já fechada, justamente no mês em que se está gastando. O mês certo é o da fatura aberta, derivado do dia de fechamento do cartão.
 17. **Limpeza de histórico desfeita pela edição seguinte** — o app guarda todos os meses em memória e reescreve as abas dele por inteiro a cada edição. Limpar a planilha com o app aberto traz tudo de volta no primeiro clique. Por isso `Limpeza.gs` exige o app fechado e um F5 depois.
+18. **Dia de fechamento/vencimento voltando como `1900-01-02`** — são números (3, 10) gravados em célula que herdou formato de data; a API do Sheets devolve o serial lido como data. `parseInt` disso dá 1900, falha no teste `1..31`, e o app caía no mês do calendário **em silêncio**. `gravarCartoes()` força formato numérico nas duas colunas. Mesma família do `mes_ref` virando `Date`.
+19. **Buraco entre o fechamento e o pagamento da fatura** — a fatura aberta chega ao Pluggy sem as compras feitas entre o dia do fechamento e o dia do pagamento (03 a 09/08, no caso real). Confirmado com três formas de consulta — janela do sync, sem filtro de data e estreita sobre o buraco — e todas concordaram: o dado não existe no Pluggy. Não é paginação (1 página, 117 itens, sem `next`) nem perda na gravação. A hipótese é que o pagamento reinicia a visão de "fatura atual" do banco, e essas compras só aparecem quando a fatura fecha e o Pluggy a materializa como fatura fechada. **Enquanto isso, o total do mês corrente fica subestimado** — usar lançamento manual para fechar o mês. `sondarLacuna()` e `investigarFaturaSumida()` refazem a verificação.
 
 ## Estilo visual (design system informal)
 
