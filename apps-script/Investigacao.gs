@@ -212,3 +212,107 @@ function _isoDataCelula(v) {
   }
   return String(v || '').slice(0, 10);
 }
+
+/**
+ * A paginação do /v2/transactions está trazendo TUDO?
+ *
+ * Suspeita levantada por dados reais: a fatura de setembro veio sem nenhuma
+ * compra entre 03/08 e 09/08, enquanto a conta Platinum — que tem UMA
+ * transação no período todo — trouxe a dela normalmente. Mesmo código, mesma
+ * janela: a única diferença entre as contas é o volume, e volume é o que
+ * aciona a paginação.
+ *
+ * Uma página perdida no meio do laço produz exatamente esse sintoma: um buraco
+ * CONTÍGUO de datas, sem erro nenhum, porque concat de uma lista vazia é
+ * silencioso.
+ *
+ * Esta função refaz a busca página a página e imprime o que o laço de
+ * pluggyTransacoes() esconde: quantas páginas, quantos itens em cada uma, o
+ * intervalo de datas de cada página, o `next` cru, e o total que a própria API
+ * declara. Se o total declarado for maior que o coletado, o bug é nosso.
+ *
+ * Não escreve nada.
+ */
+function conferirPaginacao() {
+  var log = [];
+  function p(s) { log.push(s); Logger.log(s); }
+
+  var hoje = new Date();
+  var de = _isoData(new Date(hoje.getTime() - INVESTIGACAO_DIAS_ATRAS * 86400000));
+  var ate = _isoData(new Date(hoje.getTime() + INVESTIGACAO_DIAS_FRENTE * 86400000));
+
+  p('=== A PAGINAÇÃO ESTÁ TRAZENDO TUDO? ===');
+  p('Janela: ' + de + ' a ' + ate);
+  p('');
+
+  pluggyItems().ids.forEach(function (itemId) {
+    pluggyContasCredito(itemId).forEach(function (c) {
+      p('════════════════════════════════════════════════════');
+      p('💳 ' + (c.name || c.id) + (c.number ? ' ·' + String(c.number).slice(-4) : ''));
+
+      var caminho = '/v2/transactions';
+      var params = { accountId: c.id, dateFrom: de, dateTo: ate };
+      var todas = [], pagina = 0, declarado = null, totalPaginas = null;
+      var datas = [];
+
+      while (pagina < 100) {
+        var r = pluggyGet(caminho, params);
+        if (!r.ok) { p('   ❌ HTTP ' + r.code + ' na página ' + (pagina + 1)); break; }
+
+        var b = r.body || {};
+        var res = b.results || [];
+        pagina++;
+
+        if (pagina === 1) {
+          // Os campos de paginação variam entre versões da API. Imprimir as
+          // chaves cruas evita supor o nome errado e concluir besteira.
+          p('   Campos da resposta: ' + Object.keys(b).join(', '));
+          declarado = (b.total !== undefined) ? b.total : null;
+          totalPaginas = (b.totalPages !== undefined) ? b.totalPages : null;
+        }
+
+        var ds = res.map(function (t) { return _isoData(new Date(t.date)); }).sort();
+        datas = datas.concat(ds);
+        todas = todas.concat(res);
+
+        p('   página ' + _pad(pagina, 3) + ' itens=' + _pad(res.length, 5) +
+          ' datas ' + (ds.length ? ds[0] + ' .. ' + ds[ds.length - 1] : '(vazia)') +
+          '  next=' + (b.next ? String(b.next).slice(0, 60) : '(fim)'));
+
+        if (!b.next) break;
+        caminho = '/v2/transactions' + (String(b.next).charAt(0) === '?' ? b.next : '?' + b.next);
+        params = null;
+      }
+
+      p('');
+      p('   coletado: ' + todas.length +
+        '   declarado pela API: ' + (declarado === null ? '(não informa)' : declarado) +
+        '   páginas: ' + pagina + (totalPaginas ? ' de ' + totalPaginas : ''));
+
+      if (declarado !== null && declarado !== todas.length) {
+        p('   ❌ FALTAM ' + (declarado - todas.length) + ' TRANSAÇÕES. O laço de');
+        p('      pluggyTransacoes() está perdendo página. Bug nosso.');
+      } else if (declarado !== null) {
+        p('   ✅ Coletado bate com o total declarado pela API.');
+      }
+
+      // Buraco contíguo de datas é a assinatura de página perdida. Só vale
+      // como pista — dia sem compra também produz intervalo.
+      datas.sort();
+      var maior = 0, ondeA = '', ondeB = '';
+      for (var i = 1; i < datas.length; i++) {
+        var dias = Math.round((new Date(datas[i]) - new Date(datas[i - 1])) / 86400000);
+        if (dias > maior) { maior = dias; ondeA = datas[i - 1]; ondeB = datas[i]; }
+      }
+      if (maior > 1) {
+        p('   Maior intervalo sem transação: ' + maior + ' dias (' + ondeA + ' → ' + ondeB + ')');
+      }
+      p('');
+    });
+  });
+
+  p('Se o coletado bate com o declarado e ainda falta compra na fatura do');
+  p('banco, então o Pluggy realmente não tem o dado — e o problema está no');
+  p('salto banco → Pluggy, não em nós.');
+  return log.join('\n');
+}
