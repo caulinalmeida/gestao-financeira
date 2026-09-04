@@ -52,6 +52,7 @@ const alvos = [
   'function cmpValor(', 'function ordenarLinhas(', 'function chaveData(',
   'function diaDoCartao(', 'function mesAtualKey(',
   'function faturasPendentesDoBanco(',
+  'function parseDataHora(', 'function horasDesde(',
 ];
 const pedacos = [];
 let faltou = [];
@@ -785,6 +786,59 @@ console.log('=== 16. faturasPendentesDoBanco ===');
   eq('sem cartões devolve vazio', nomes(FP('2026-09', [], [], new Date(2026, 8, 4))), []);
   eq('mesRef inválido é seguro', nomes(FP('lixo', [black], [], new Date(2026, 8, 4))), []);
   eq('undefined é seguro', nomes(FP('2026-09', undefined, undefined, new Date(2026, 8, 4))), []);
+}
+
+// ── 17. Data/hora da planilha ────────────────────────────────────────────────
+// Terceira aparição da mesma família de bug: valor gravado com tipo, lido de
+// volta como texto localizado. Aqui o estrago foi "Sincronizado há 149d" logo
+// depois de um sync — 04/09 lido como 9 de abril.
+console.log('');
+console.log('=== 17. parseDataHora / horasDesde ===');
+{
+  const PD = ctx.parseDataHora;
+  const iso = d => d ? d.toISOString().slice(0, 19) : null;
+
+  // O caso real, medido: a célula devolvia isto e o app dizia 149 dias.
+  eq('dd/mm/aaaa hh:mm:ss é lido como setembro, não abril',
+     iso(PD('04/09/2026 16:37:58')), '2026-09-04T19:37:58');
+  eq('sem segundos', iso(PD('04/09/2026 16:37')), '2026-09-04T19:37:00');
+  eq('só a data', iso(PD('04/09/2026')), '2026-09-04T03:00:00');
+  eq('um dígito no dia e no mês', iso(PD('4/9/2026 16:37:58')), '2026-09-04T19:37:58');
+
+  // ISO continua funcionando — é como pluggy_atualizado_em sempre chegou, e é
+  // por isso que aquele valor nunca errou.
+  eq('ISO com Z passa direto',
+     iso(PD('2026-09-04T19:37:58.000Z')), '2026-09-04T19:37:58');
+  eq('ISO só data', iso(PD('2026-09-04')), '2026-09-04T00:00:00');
+
+  eq('vazio devolve null', PD(''), null);
+  eq('null devolve null', PD(null), null);
+  eq('texto sem data devolve null', PD('nunca'), null);
+
+  // A prova de que os dois formatos concordam: mesmo instante, mesma leitura.
+  ok('dd/mm/aaaa e ISO do mesmo instante dão a mesma data',
+     iso(PD('04/09/2026 16:37:58')) === iso(PD('2026-09-04T16:37:58')));
+
+  // E a discriminante: sem o tratamento, o dia 04/09 viraria 09/04.
+  ok('não confunde dia com mês quando os dois são válidos',
+     PD('04/09/2026').getMonth() === 8);
+
+  const HD = ctx.horasDesde;
+  eq('sem valor não calcula idade', HD(''), null);
+  eq('lixo não calcula idade', HD('nunca'), null);
+  const umaHoraAtras = new Date(Date.now() - 3600000);
+  ok('ISO de uma hora atrás dá ~1h',
+     Math.abs(HD(umaHoraAtras.toISOString()) - 1) < 0.02);
+  // A mesma hora escrita à brasileira tem que dar a MESMA idade — era aqui que
+  // saíam os 149 dias.
+  const br = String(umaHoraAtras.getDate()).padStart(2, '0') + '/' +
+             String(umaHoraAtras.getMonth() + 1).padStart(2, '0') + '/' +
+             umaHoraAtras.getFullYear() + ' ' +
+             String(umaHoraAtras.getHours()).padStart(2, '0') + ':' +
+             String(umaHoraAtras.getMinutes()).padStart(2, '0') + ':' +
+             String(umaHoraAtras.getSeconds()).padStart(2, '0');
+  ok('a mesma hora no formato do Sheets dá a mesma idade',
+     Math.abs(HD(br) - 1) < 0.02);
 }
 
 console.log('\n' + '='.repeat(52));

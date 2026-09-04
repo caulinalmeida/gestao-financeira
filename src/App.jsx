@@ -809,9 +809,32 @@ function tempoRelativo(iso){
 }
 
 /** Idade em horas, ou null se a data não der para ler. */
+/**
+ * Data/hora vinda da planilha, em qualquer das formas em que ela chega.
+ *
+ * A API do Sheets devolve VALOR FORMATADO: célula com formato de data volta
+ * como "04/09/2026 16:37:58", e `new Date()` lê isso como 9 de ABRIL — o
+ * construtor assume MM/DD. Foi o "Sincronizado há 149d" logo depois de um sync.
+ *
+ * Terceira vez que esta família de bug aparece (mes_ref virando Date, dia de
+ * fechamento virando 1900-01-02, agora a data do sync). O padrão é sempre o
+ * mesmo: valor gravado com tipo, lido de volta como texto localizado.
+ */
+function parseDataHora(v){
+  if(!v) return null;
+  const s=String(v).trim();
+  const br=s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:[ ,]+(\d{1,2}):(\d{2})(?::(\d{2}))?)?$/);
+  if(br){
+    const[,d,m,a,h,mi,se]=br;
+    return new Date(+a,+m-1,+d,+(h||0),+(mi||0),+(se||0));
+  }
+  const t=new Date(s);
+  return isNaN(t.getTime())?null:t;
+}
+
 function horasDesde(iso){
-  const t=new Date(iso).getTime();
-  return isNaN(t)?null:(Date.now()-t)/3600000;
+  const d=parseDataHora(iso);
+  return d?(Date.now()-d.getTime())/3600000:null;
 }
 
 /**

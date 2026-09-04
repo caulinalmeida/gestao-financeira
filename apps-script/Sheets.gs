@@ -99,7 +99,25 @@ function statusGravar(patch) {
   var s = aba(ABA_STATUS, COLS_STATUS);
   var mapa = statusLer();
   Object.keys(patch).forEach(function (k) { mapa[k] = patch[k]; });
-  var linhas = Object.keys(mapa).sort().map(function (k) { return [k, mapa[k]]; });
+
+  var linhas = Object.keys(mapa).sort().map(function (k) {
+    var v = mapa[k];
+    // Date vira ISO ANTES de gravar. Gravado como objeto Date, o Sheets formata
+    // a celula como data e a API devolve "04/09/2026 16:37:58" - que o
+    // new Date() do browser le como 9 de ABRIL, mes e dia trocados. Foi o
+    // "Sincronizado ha 149d" logo depois de um sync de minutos atras.
+    // pluggy_atualizado_em nunca teve o problema porque ja chega em ISO do
+    // Pluggy: os dois valores ficam lado a lado na mesma barra, e so um errava.
+    if (Object.prototype.toString.call(v) === '[object Date]' && !isNaN(v.getTime())) {
+      v = v.toISOString();
+    }
+    return [k, v];
+  });
+
+  // Coluna de valor como TEXTO, e antes de escrever: se a celula estiver com
+  // formato de data, o Sheets reinterpreta a propria string ISO na escrita e o
+  // problema volta pela outra porta.
+  if (linhas.length) s.getRange(2, 2, linhas.length, 1).setNumberFormat('@');
   escreverLinhas(s, linhas, 2);
 }
 
