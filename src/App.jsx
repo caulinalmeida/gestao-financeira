@@ -768,6 +768,40 @@ function PainelResponsivo({isMobile,onClose,titulo,descricao,children,wide}){
  * (`sort` = {col,dir}), mas usa `definir` em vez de `toggle`: aqui a coluna e a
  * direção são dois controles, e ciclar asc→desc→nenhum num select confundiria.
  */
+/**
+ * Classes do chip de dono. Mesma convenção de cor do checklist — teal é Caulin,
+ * roxo é Luanna — porque é o que deixa a fatura escaneável sem ler linha a linha.
+ * Divisão e terceiros ficam neutros de propósito: pintar tudo tira o contraste.
+ */
+function classeDono(dono){
+  const p=participantes(dono);
+  if(p.length===1&&p[0]==="Caulin") return "border-gf-teal-100 bg-gf-teal-50 text-gf-teal-600";
+  if(p.length===1&&p[0]==="Luanna") return "border-gf-purple-100 bg-gf-purple-50 text-gf-purple-600";
+  return "border-gf-border bg-gf-surface text-gf-text-dim";
+}
+
+/**
+ * Cabeçalho de tela: título e mês de um lado, ações do outro.
+ *
+ * Antes era uma linha só com `justify-between`. No celular os botões venciam a
+ * disputa por espaço e o título quebrava no meio da frase — "Contas e" numa
+ * linha, "renda SETEMBRO 2026" na outra. Agora empilha: título inteiro em cima,
+ * ações numa linha própria, cada uma com metade da largura e 40px de alvo.
+ */
+function CabecalhoTela({titulo,sub,children}){
+  return(
+    <div className="mb-3 flex flex-col gap-2.5 md:flex-row md:items-center md:justify-between md:gap-3">
+      <div className="min-w-0">
+        <div className="text-sm font-semibold text-gf-text">{titulo}</div>
+        {sub&&<div className="mt-0.5 text-[11px] text-gf-text-muted">{sub}</div>}
+      </div>
+      <div className="flex shrink-0 gap-2 [&>button]:min-h-10 [&>button]:flex-1 [&>button]:justify-center md:[&>button]:min-h-0 md:[&>button]:flex-none">
+        {children}
+      </div>
+    </div>
+  );
+}
+
 /** Um campo rótulado dentro de um cartão de formulário. `largo` ocupa as duas colunas. */
 function CampoCard({label,largo,children}){
   return(
@@ -1046,9 +1080,12 @@ function BarraOpenFinance({temOF,ultimoSync,pluggyEm,erroSync,conciliacao,fatura
             ?<Badge>confere com o banco</Badge>
             :<Badge color="new">{divergentes.length} cartão(ões) divergindo</Badge>)}
         </div>
+        {/* `Btn small` tem 11px de fonte e 5px de padding: ~20px de altura, alvo
+            pequeno demais no celular. No desktop fica como estava. */}
         <div style={{display:"flex",gap:6}}>
-          <Btn small onClick={onCartoes}>💳 Cartões</Btn>
-          <Btn small active onClick={onAtualizar} disabled={pedindoSync}>
+          <Btn small onClick={onCartoes} style={{minHeight:isMobile?40:undefined}}>💳 Cartões</Btn>
+          <Btn small active onClick={onAtualizar} disabled={pedindoSync}
+            style={{minHeight:isMobile?40:undefined}}>
             {pedindoSync?"Pedindo…":"🔄 Atualizar"}
           </Btn>
         </div>
@@ -1084,7 +1121,7 @@ function BarraOpenFinance({temOF,ultimoSync,pluggyEm,erroSync,conciliacao,fatura
       )}
 
       {faturasPendentes.length>0&&(
-        <div style={{marginTop:10,fontSize:12,color:C.amber600,background:C.amber50,border:`1px solid ${C.amber100}`,padding:"8px 10px",borderRadius:8,lineHeight:1.7}}>
+        <div style={{marginTop:10,fontSize:12,color:C.amber600,background:C.amber50,border:`1px solid ${C.amber100}`,padding:"9px 11px",borderRadius:8,lineHeight:1.55}}>
           <strong>A fatura já fechou no banco, mas ainda não chegou pelo Open Finance</strong>
           <div style={{color:C.textDim}}>
             {faturasPendentes.map(c=>c.nome).join(" · ")}
@@ -1098,7 +1135,7 @@ function BarraOpenFinance({temOF,ultimoSync,pluggyEm,erroSync,conciliacao,fatura
       )}
 
       {divergentes.length>0&&(
-        <div style={{marginTop:10,fontSize:12,color:C.amber600,background:C.amber50,border:`1px solid ${C.amber100}`,padding:"8px 10px",borderRadius:8,lineHeight:1.7}}>
+        <div style={{marginTop:10,fontSize:12,color:C.amber600,background:C.amber50,border:`1px solid ${C.amber100}`,padding:"9px 11px",borderRadius:8,lineHeight:1.55}}>
           <strong>Total diferente do banco</strong>
           {divergentes.map(c=>(
             <div key={c.accountId} style={{color:C.textDim}}>
@@ -1199,10 +1236,12 @@ function CardFatura({r,pessoas,onCampo,onIgnorar,onAprender,onLegado,onRemoverLe
             <span className={cn("rounded-full border px-1.5 py-px text-[10px]",
               semDono
                 ?"border-gf-amber-100 bg-gf-amber-50 font-semibold text-gf-amber-600"
-                :"border-gf-border bg-gf-surface text-gf-text-dim")}>
+                :classeDono(r.dono))}>
               {r.dono?rotuloDono(r.dono):"sem dono"}
             </span>
-            {!pag&&(
+            {/* VARIÁVEL é o padrão e não informa nada — mostrar em toda linha só
+                diluía os chips que importam. Continua editável ao expandir. */}
+            {!pag&&r.parcelas&&r.parcelas!=="VARIÁVEL"&&(
               <span className="rounded-full border border-gf-border bg-gf-surface px-1.5 py-px text-[10px] text-gf-text-dim">
                 {r.parcelas}
               </span>
@@ -1210,10 +1249,10 @@ function CardFatura({r,pessoas,onCampo,onIgnorar,onAprender,onLegado,onRemoverLe
             {r.obs&&<span className="min-w-0 truncate text-[10px] text-gf-text-muted">{r.obs}</span>}
           </div>
         </div>
-        <div className="flex shrink-0 flex-col items-end gap-1.5">
+        <div className="flex shrink-0 items-center gap-1.5">
           <span className={cn("text-[13px] font-semibold tabular-nums",
             r.valor<0?"text-gf-green-600":"text-gf-text")}>{fmtBRL(r.valor)}</span>
-          <ChevronDown className={cn("size-4 text-gf-text-muted transition-transform",aberto&&"rotate-180")}/>
+          <ChevronDown className={cn("size-4 shrink-0 text-gf-text-muted transition-transform",aberto&&"rotate-180")}/>
         </div>
       </button>
 
@@ -1276,19 +1315,21 @@ function TabelaFatura({titulo,subtitulo,linhas,isMobile,pessoas,filtro,setFiltro
 
   return(
     <div style={card}>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:12,flexWrap:"wrap",gap:8}}>
-        <div>
-          <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-            <span style={{fontSize:14,fontWeight:600,color:C.text}}>{titulo}</span>
+      {/* Título e total dividem a mesma linha também no celular. Empilhados, os
+          dois somavam quatro fileiras antes de qualquer transação aparecer. */}
+      <div className="mb-3 flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-sm font-semibold text-gf-text">{titulo}</span>
             {novos>0&&<Badge color="new">{novos} para revisar</Badge>}
           </div>
-          <div style={{fontSize:11,color:C.textMuted,marginTop:3}}>
+          <div className="mt-0.5 text-[11px] leading-snug text-gf-text-muted">
             {linhas.length} lançamentos · {subtitulo}
           </div>
         </div>
-        <div style={{textAlign:"right"}}>
-          <div style={{fontSize:19,fontWeight:700,color:C.text,fontVariantNumeric:"tabular-nums",letterSpacing:"-0.02em"}}>{fmtBRL(total)}</div>
-          <div style={{fontSize:10,color:C.textMuted}}>total da fatura</div>
+        <div className="shrink-0 text-right">
+          <div className="text-lg font-bold tracking-tight tabular-nums text-gf-text md:text-xl">{fmtBRL(total)}</div>
+          <div className="text-[10px] text-gf-text-muted">total da fatura</div>
         </div>
       </div>
 
@@ -1298,23 +1339,33 @@ function TabelaFatura({titulo,subtitulo,linhas,isMobile,pessoas,filtro,setFiltro
         </div>
       )}
 
-      <div style={{display:"flex",gap:5,flexWrap:"wrap",marginBottom:10,alignItems:"center"}}>
+      {/* Uma fileira só, rolando na horizontal no celular. Antes eram duas linhas
+          de chips mais uma de checkboxes: somadas ao aviso de fatura pendente, a
+          primeira transação só aparecia depois de rolar a tela inteira. Rolagem
+          horizontal aqui é legítima — são chips independentes, e o que rola é a
+          fileira, não a página. */}
+      <div className="mb-2.5 flex gap-1.5 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden md:flex-wrap md:overflow-visible md:pb-0">
         {filtros.map(f=>(
-          <button key={f} className="gf-btn" onClick={()=>setFiltro(f)}
-            style={{fontSize:11,padding:"5px 10px",borderRadius:20,cursor:"pointer",
-              border:`1px solid ${filtro===f?C.teal100:C.border}`,
-              background:filtro===f?C.teal50:"transparent",
-              color:filtro===f?C.teal600:C.textDim,fontWeight:filtro===f?700:500}}>{f}</button>
+          <button key={f} onClick={()=>setFiltro(f)}
+            className={cn("gf-btn shrink-0 rounded-full border px-3 py-1.5 text-[11px] transition-colors",
+              filtro===f
+                ?"border-gf-teal-100 bg-gf-teal-50 font-bold text-gf-teal-600"
+                :"border-gf-border font-medium text-gf-text-dim")}>{f}</button>
         ))}
-        <span style={{flex:1}}/>
-        <label style={{fontSize:11,color:C.textDim,display:"flex",alignItems:"center",gap:5,cursor:"pointer"}}>
-          <input type="checkbox" checked={mostrarIgnoradas} onChange={e=>setMostrarIgnoradas(e.target.checked)} style={{accentColor:C.teal600}}/>
-          ignoradas
-        </label>
-        <label style={{fontSize:11,color:C.textDim,display:"flex",alignItems:"center",gap:5,cursor:"pointer"}}>
-          <input type="checkbox" checked={mostrarPagamentos} onChange={e=>setMostrarPagamentos(e.target.checked)} style={{accentColor:C.teal600}}/>
-          pagamentos
-        </label>
+        <span className="mx-0.5 w-px shrink-0 self-stretch bg-gf-border" aria-hidden="true"/>
+        {/* Deixaram de ser checkbox: um quadradinho de 13px era o menor alvo da
+            tela. Como chip, ficam do tamanho dos filtros e em cor própria, para
+            não parecerem mais um filtro de classificação. */}
+        {[["ignoradas",mostrarIgnoradas,setMostrarIgnoradas],
+          ["pagamentos",mostrarPagamentos,setMostrarPagamentos]].map(([rot,val,set])=>(
+          <button key={rot} onClick={()=>set(!val)} aria-pressed={val}
+            className={cn("gf-btn shrink-0 rounded-full border px-3 py-1.5 text-[11px] transition-colors",
+              val
+                ?"border-gf-blue-100 bg-gf-blue-50 font-semibold text-gf-blue-600"
+                :"border-gf-border font-medium text-gf-text-muted")}>
+            <span className="inline-block w-2.5 text-center">{val?"✓":"+"}</span> {rot}
+          </button>
+        ))}
       </div>
 
       {isMobile?(
@@ -2742,21 +2793,21 @@ export default function App(){
               onAtualizar={pedirSync} onCartoes={()=>setShowCartoes(true)}
               isMobile={isMobile}/>
 
-            <div style={{display:"flex",gap:0,marginBottom:14,flexWrap:"wrap"}}>
+            {/* Três colunas iguais em vez do segmentado de larguras naturais: com
+                emoji e contador, "🔴 Em aberto 36" era quase o dobro de "Fechada" e
+                a fileira encostava na borda da tela. O contador desceu para uma
+                segunda linha, onde não disputa largura com o rótulo. */}
+            <div className="mb-3 grid grid-cols-3 gap-1 rounded-xl border border-gf-border-soft bg-gf-surface p-1">
               {[
-                {l:"🔴 Em aberto",n:ofAberta.length},
-                {l:"✅ Fechada",n:ofFechada.length+faturaLegado.length},
-                {l:"✏️ Manual",n:manual.length},
+                {l:"Em aberto",n:ofAberta.length},
+                {l:"Fechada",n:ofFechada.length+faturaLegado.length},
+                {l:"Manual",n:manual.length},
               ].map((t,i)=>(
-                <button key={t.l} className="gf-btn" onClick={()=>setFaturaTab(i)}
-                  style={{fontSize:12,padding:"7px 14px",cursor:"pointer",
-                    border:`1px solid ${faturaTab===i?C.teal100:C.border}`,
-                    borderRadius:i===0?"8px 0 0 8px":i===2?"0 8px 8px 0":0,
-                    borderLeftWidth:i===0?1:0,
-                    background:faturaTab===i?C.teal50:C.surfaceAlt,
-                    color:faturaTab===i?C.teal600:C.textDim,
-                    fontWeight:faturaTab===i?700:500}}>
-                  {t.l}{t.n>0&&<span style={{marginLeft:6,opacity:0.7}}>{t.n}</span>}
+                <button key={t.l} onClick={()=>setFaturaTab(i)}
+                  className={cn("gf-btn flex min-h-[44px] flex-col items-center justify-center gap-0.5 rounded-lg px-1 leading-none transition-colors",
+                    faturaTab===i?"bg-gf-teal-50 text-gf-teal-600":"text-gf-text-dim")}>
+                  <span className={cn("text-[12px]",faturaTab===i?"font-bold":"font-medium")}>{t.l}</span>
+                  <span className="text-[10px] tabular-nums opacity-60">{t.n}</span>
                 </button>
               ))}
             </div>
@@ -2797,13 +2848,10 @@ export default function App(){
             {/* Manual — cartões sem conector, ou lançamento avulso */}
             {faturaTab===2&&(
               <div style={card}>
-                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12,flexWrap:"wrap",gap:8}}>
-                  <div><span style={{fontSize:14,fontWeight:600,color:C.text}}>Lançamento manual</span><span style={{fontSize:12,color:C.textMuted,marginLeft:8}}>{mesLabel(mesRef)}</span></div>
-                  <div style={{display:"flex",gap:6}}>
-                    <Btn small onClick={()=>setShowCopy(true)}>📋 Copiar mês anterior</Btn>
-                    <Btn active small onClick={addM}>+ Adicionar</Btn>
-                  </div>
-                </div>
+                <CabecalhoTela titulo="Lançamento manual" sub={mesLabel(mesRef)}>
+                  <Btn small onClick={()=>setShowCopy(true)}>📋 Copiar mês anterior</Btn>
+                  <Btn active small onClick={addM}>+ Adicionar</Btn>
+                </CabecalhoTela>
                 <p style={{fontSize:12,color:C.textMuted,margin:"0 0 12px",lineHeight:1.6}}>
                   Para cartões sem conector no Open Finance, ou lançamentos que você queira somar à mão.
                 </p>
@@ -2882,13 +2930,10 @@ export default function App(){
         {/* CONTAS */}
         {tab===2&&(
           <div style={card}>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
-              <div><span style={{fontSize:14,fontWeight:600,color:C.text}}>Contas e renda</span><span style={{fontSize:12,color:C.textMuted,marginLeft:8}}>{mesLabel(mesRef)}</span></div>
-              <div style={{display:"flex",gap:6}}>
-                <Btn small onClick={()=>setShowCopy(true)}>📋 Copiar mês anterior</Btn>
-                <Btn active small onClick={addC}>+ Adicionar</Btn>
-              </div>
-            </div>
+            <CabecalhoTela titulo="Contas e renda" sub={mesLabel(mesRef)}>
+              <Btn small onClick={()=>setShowCopy(true)}>📋 Copiar mês anterior</Btn>
+              <Btn active small onClick={addC}>+ Adicionar</Btn>
+            </CabecalhoTela>
             {showCopy&&<Modal onClose={()=>setShowCopy(false)}><CopyMesModal dadosMes={dadosMes} mesRef={mesRef} onClose={()=>setShowCopy(false)} onImport={handleCopyImport}/></Modal>}
             {contas.length===0
               ?<EmptyState icon="🏠">Nenhuma conta lançada em {mesLabel(mesRef)}.</EmptyState>
@@ -2941,13 +2986,10 @@ export default function App(){
         {/* INVESTIMENTOS */}
         {tab===3&&(
           <div style={card}>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
-              <div><span style={{fontSize:14,fontWeight:600,color:C.text}}>Investimentos</span><span style={{fontSize:12,color:C.textMuted,marginLeft:8}}>{mesLabel(mesRef)}</span></div>
-              <div style={{display:"flex",gap:6}}>
-                <Btn small onClick={()=>setShowCopy(true)}>📋 Copiar mês anterior</Btn>
-                <Btn active small onClick={addI}>+ Adicionar</Btn>
-              </div>
-            </div>
+            <CabecalhoTela titulo="Investimentos" sub={mesLabel(mesRef)}>
+              <Btn small onClick={()=>setShowCopy(true)}>📋 Copiar mês anterior</Btn>
+              <Btn active small onClick={addI}>+ Adicionar</Btn>
+            </CabecalhoTela>
             {showCopy&&<Modal onClose={()=>setShowCopy(false)}><CopyMesModal dadosMes={dadosMes} mesRef={mesRef} onClose={()=>setShowCopy(false)} onImport={handleCopyImport}/></Modal>}
             {invest.length===0
               ?<EmptyState icon="📈">Nenhum aporte em {mesLabel(mesRef)}.</EmptyState>

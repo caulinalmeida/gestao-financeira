@@ -118,6 +118,12 @@
 
 html,body,#root{ min-height:100%; }
 
+/* Nada deve poder empurrar a página para os lados no celular — quando isso
+   acontece, o dedo arrasta a tela inteira e até a barra fixa de baixo sai do
+   lugar. `clip` e não `hidden`: `hidden` criaria um contexto de rolagem e
+   quebraria o `position:sticky` da topbar. */
+html,body{ overflow-x:clip; }
+
 body{
   margin:0;
   background:var(--gf-bg);
