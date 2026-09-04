@@ -270,3 +270,89 @@ function limparSyncLog(manterUltimas) {
   Logger.log(msg);
   return msg;
 }
+
+/**
+ * Preparar a planilha para uma conexão RECRIADA no Meu Pluggy.
+ *
+ * Apagar a conexão e conectar de novo gera itemId e accountIds NOVOS. Sem
+ * preparo, o efeito é fatura dobrada — e por um motivo que não é óbvio:
+ * gravarTransacoes() preserva de propósito as linhas de contas que não estão
+ * sendo sincronizadas, para não destruir cartão que saiu do ar. Depois da
+ * reconexão as contas antigas caem exatamente nessa regra, ficam para sempre,
+ * e as mesmas compras voltam com id novo ao lado das velhas.
+ *
+ * O QUE SOBREVIVE: suas classificações. OF_AJUSTES guarda o fingerprint
+ * (descrição + valor + data), e mergeFatura religa por ele quando o id muda.
+ * Foi desenhado para este caso. Esta função NÃO toca em OF_AJUSTES.
+ *
+ * O QUE SE PERDE: os apelidos dos cartões. São ajustes do tipo CARTAO,
+ * chaveados por account_id e sem fingerprint — não há como religar. São dois
+ * cartões, refazer leva dez segundos.
+ *
+ * ORDEM CERTA:
+ *   1. simularReconexao()        -> confere o estrago antes
+ *   2. reconecte no meu.pluggy.ai
+ *   3. pegue o novo itemId e atualize PLUGGY_ITEM_IDS nas Propriedades
+ *   4. FECHE o app no navegador
+ *   5. prepararReconexao()
+ *   6. sincronizarAgora()
+ *   7. abra o app, dê F5, refaça os dois apelidos
+ */
+function simularReconexao() { return _reconexao(true); }
+function prepararReconexao() { return _reconexao(false); }
+
+function _reconexao(simular) {
+  var ss = SpreadsheetApp.getActive();
+  var log = [];
+  function p(s) { log.push(s); Logger.log(s); }
+
+  p(simular ? '=== SIMULAÇÃO — nada será escrito ===' : '=== PREPARANDO PARA RECONEXÃO ===');
+  p('');
+
+  [{ nome: ABA_TRANSACOES, cols: COLS_TRANSACOES },
+   { nome: ABA_CARTOES, cols: COLS_CARTOES },
+   { nome: ABA_FATURAS, cols: COLS_FATURAS }].forEach(function (cfg) {
+    var sh = ss.getSheetByName(cfg.nome);
+    if (!sh) { p('•  ' + cfg.nome + ': não existe'); return; }
+    var n = lerLinhas(sh, cfg.cols.length).filter(function (l) { return l[0]; }).length;
+    p('•  ' + cfg.nome + ': ' + n + ' linhas -> 0');
+    if (!simular && n) escreverLinhas(sh, [], cfg.cols.length);
+  });
+
+  // OF_AJUSTES fica intacta de propósito. Só contamos o que vai religar e o
+  // que não tem como religar, para não haver surpresa depois.
+  var sAj = ss.getSheetByName(ABA_AJUSTES);
+  var apelidos = 0, comFp = 0, semFp = 0;
+  if (sAj) {
+    var iTipo = col(COLS_AJUSTES, 'tipo');
+    var iFp = col(COLS_AJUSTES, 'fingerprint');
+    lerLinhas(sAj, COLS_AJUSTES.length).forEach(function (l) {
+      if (!String(l[1] || '').trim()) return;
+      if (String(l[iTipo] || 'TX').toUpperCase() === 'CARTAO') { apelidos++; return; }
+      if (String(l[iFp] || '').trim()) comFp++; else semFp++;
+    });
+  }
+  p('');
+  p('•  ' + ABA_AJUSTES + ': PRESERVADA (é onde vivem suas decisões)');
+  p('     ' + comFp + ' classificação(ões) com fingerprint -> religam sozinhas');
+  if (semFp) p('     ⚠️ ' + semFp + ' sem fingerprint -> essas você vai ter que refazer');
+  p('     ' + apelidos + ' apelido(s) de cartão -> NÃO religam, refaça na mão');
+  p('');
+
+  if (simular) {
+    p('Nada foi escrito. Se estiver de acordo:');
+    p('  1. reconecte no meu.pluggy.ai');
+    p('  2. atualize PLUGGY_ITEM_IDS com o novo itemId');
+    p('  3. feche o app, rode prepararReconexao() e depois sincronizarAgora()');
+  } else {
+    p('✅ Abas do Open Finance zeradas.');
+    p('');
+    p('AGORA:');
+    p('  1. Confirme que PLUGGY_ITEM_IDS já tem o itemId NOVO.');
+    p('     Sem isso o sync falha com 404 e a planilha fica vazia.');
+    p('  2. sincronizarAgora()');
+    p('  3. Abra o app, F5, e refaça os apelidos dos cartões.');
+  }
+
+  return log.join('\n');
+}
