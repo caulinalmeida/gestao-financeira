@@ -886,6 +886,58 @@ console.log('=== 17. parseDataHora / horasDesde ===');
      'achou ' + listas.length);
 }
 
+// -- 19. Tipografia: a escala e' a unica fonte de tamanho ------------------
+// Eram onze tamanhos soltos (9,10,11,12,13,14,15,19,20,22,26...), sem regra de
+// quando usar qual e sem nenhuma diferenca entre celular e desktop. Viraram
+// oito tokens em src/index.css, e so' eles mudam no @media -- e' o que faz o
+// mesmo componente encolher no desktop e crescer no celular sem um `isMobile`
+// no meio. Um px cravado aqui e' invisivel: nao quebra nada, so' fica fora da
+// escala para sempre.
+//
+// Os tamanhos de GLIFO ficam de fora: o X de fechar (20), o icone do login
+// (26) e o emoji do empty state (34) sao desenho, nao tipografia.
+{
+  console.log('');
+  console.log('-- 19. Tipografia: nenhum tamanho fora da escala --');
+  const GLIFOS = [20, 26, 34];
+
+  const px = src.split('text-[').slice(1)
+    .map(t => t.split(']')[0])
+    .filter(t => t.endsWith('px'));
+  ok('nenhum text-[Npx] cravado no JSX', px.length === 0, px.join(' | '));
+
+  const inline = src.split('fontSize:').slice(1)
+    .map(t => parseInt(t, 10))
+    .filter(n => !isNaN(n));
+  const fora = inline.filter(n => GLIFOS.indexOf(n) === -1);
+  ok('nenhum fontSize numerico fora dos glifos conhecidos',
+     fora.length === 0, fora.join(', '));
+
+  // Os nomes padrao do Tailwind convivem com a escala e ninguem sabe qual
+  // venceu ao bater o olho. Dentro de src/components/ui valem -- aquilo e'
+  // codigo vendorizado -- mas nao no App.jsx.
+  const PADRAO = ['text-xs', 'text-sm', 'text-base', 'text-lg', 'text-xl',
+                  'text-2xl', 'text-3xl', 'text-4xl', 'text-5xl'];
+  const usados = [];
+  src.split('className=').slice(1).forEach(t => {
+    const aspas = t.indexOf('"');
+    if (aspas === -1 || aspas > 3) return;
+    const valor = t.slice(aspas + 1).split('"')[0];
+    valor.split(/[\s]+/).forEach(cls => {
+      const puro = cls.indexOf(':') >= 0 ? cls.slice(cls.lastIndexOf(':') + 1) : cls;
+      if (PADRAO.indexOf(puro) >= 0 && usados.indexOf(puro) === -1) usados.push(puro);
+    });
+  });
+  ok('nenhum tamanho padrao do Tailwind no App.jsx', usados.length === 0,
+     usados.join(', '));
+
+  // A escala so' serve para alguma coisa se estiver em uso.
+  const emUso = ['micro', 'meta', 'small', 'body', 'strong', 'lead', 'title', 'hero']
+    .filter(t => src.indexOf('text-' + t) >= 0 || src.indexOf('--fs-' + t) >= 0);
+  ok('os oito degraus da escala estao todos em uso', emUso.length === 8,
+     'em uso: ' + emUso.join(', '));
+}
+
 console.log('\n' + '='.repeat(52));
 console.log('RESULTADO: ' + passes + ' passaram, ' + falhas + ' falharam');
 console.log('='.repeat(52));

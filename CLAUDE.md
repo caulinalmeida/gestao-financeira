@@ -179,6 +179,20 @@ Estrutura obrigatória, não simplificar:
 - Usa a fatura **FECHADA** — é o que efetivamente se vai pagar. **Exceção:** se o mês ainda não tem nenhuma transação `POSTED`, usa a **aberta**, com aviso na tela. Sem isso a seção Cartão do mês corrente ficava vazia, inútil justamente no mês que se está planejando. Mês já fechado continua idêntico.
 - Botão final "Copiar resumo para WhatsApp" — gera um texto formatado e copia pro clipboard
 
+> **"Sobra prevista" e "Na mão" são perguntas diferentes.** O cartão do topo
+> mostra `renda − (contas + cartão + investimento)`: quanto vai sobrar no fim do
+> mês, independente do que já foi pago. O rodapé do cartão de cada pessoa mostra
+> `renda − o que ela já marcou como pago`: quanto ainda está na mão hoje. O
+> segundo começa o mês valendo a renda inteira e cai a cada item marcado — por
+> isso não se chama mais "Saldo", que dava a entender a primeira coisa. Nenhum
+> dos dois é armazenado; são leituras dos baldes que `calcChecklist()` devolve.
+
+> **`secoesDaPessoa()` é a fonte única das linhas E do progresso** ("8 de 12
+> pagos · falta R$ 1.240"). Se saíssem de lugares diferentes, o contador poderia
+> discordar do que está na tela. Marcar um grupo do cartão (Fixos/Parcelados/
+> Variáveis) continua marcando cada linha por trás — é o que alimenta
+> `estaPago` e, por ele, o "Na mão".
+
 ### Aba Parcelas
 Projeta as parcelas futuras a partir de `OF_TRANSACOES`, **sem armazenar nada novo**.
 - **O Itaú carimba o número da parcela na descrição** (`SAMSUNG NO ITAU 06/21`). `semSufixoParcela()` remove antes de qualquer agrupamento — sem isso cada parcela vira uma compra distinta e a projeção multiplica em cascata. Também impedia o dicionário de aprender parcelada, porque a chave mudava todo mês.
@@ -358,6 +372,44 @@ Os tokens semânticos do shadcn (`--primary`, `--card`, `--border`…) apontam p
 - **`--primary-foreground` é escuro**, não claro: aqui o primary é o teal vivo.
 - **Os utilitários da paleta levam prefixo `gf-`** (`bg-gf-teal-50`, `text-gf-text-dim`). Não é enfeite: nesta paleta o sufixo `*50` é um fundo **escuro** e o `*600` é a cor viva, o inverso da escala do Tailwind. Sem o prefixo, `bg-amber-50` pareceria creme e pintaria marrom.
 
+### A escala tipográfica é a única fonte de tamanho
+
+Oito degraus em `src/index.css`, e **nada de px cravado no `App.jsx`**:
+
+| token | celular | desktop | para quê |
+|---|---|---|---|
+| `micro` | 11 | 10 | rótulo caixa-alta, legenda, contador |
+| `meta` | 12 | 11 | metadado: `data · cartão · parcela` |
+| `small` | 13 | 12 | texto secundário, aviso, chip |
+| `body` | 14 | 13 | corpo: linha de lista, campo, célula |
+| `strong` | 15 | 14 | nome, título de card |
+| `lead` | 16 | 15 | título de modal/seção |
+| `title` | 22 | 24 | valor de MetricCard |
+| `hero` | 30 | 38 | o número que a tela existe para dizer |
+
+Use `text-body` (Tailwind) ou `fontSize:"var(--fs-body)"` (inline) — os dois
+leem a **mesma variável**, e é ela que muda no `@media`. É o que faz o mesmo
+componente encolher no desktop e crescer no celular **sem nenhum `isMobile`**.
+
+Dois detalhes que parecem erro e não são:
+
+- **A parte de baixo é uma rampa de 1px, não uma escala modular.** Numa tela
+  densa de dados é preciso separar rótulo de metadado de corpo em degraus finos;
+  uma razão de 1,25 daria 10 → 12,5 → 15,6, saltos grandes demais para caber
+  numa linha de tabela. O salto grande fica só no topo, onde significa "isto é
+  um título".
+- **No celular os degraus de baixo são MAIORES que no desktop.** A tela é lida a
+  30cm, em movimento e com reflexo. Nos degraus de cima é o contrário: no
+  desktop sobra largura para um número grande respirar.
+
+Ficam fora da escala os tamanhos de **glifo** — o ✕ de fechar (20), o ícone do
+login (26) e o emoji do empty state (34). São desenho, não tipografia.
+
+A seção 19 do `qa-app.cjs` recusa `text-[Npx]`, `fontSize:` numérico fora dos
+glifos, e os nomes padrão do Tailwind (`text-sm`, `text-lg`…) dentro do
+`App.jsx` — eles conviveriam com a escala e ninguém saberia qual venceu ao bater
+o olho. Dentro de `src/components/ui` valem, que é código vendorizado.
+
 ### Abaixo de 768px, tabela não existe
 
 As sete tabelas do app têm de 420 a 680px de largura mínima — num aparelho de 390px todas rolavam na horizontal, com os controles de edição nascendo fora da tela. Cada uma tem agora duas formas: `isMobile ? cartões : <table>`. São dois tipos de cartão, e a escolha entre eles é sobre o que a tela faz:
@@ -387,7 +439,6 @@ Use `inpM`/`selM` dentro dos cartões: nas tabelas os campos têm largura fixa e
 
 - Otimizar sync para update incremental em vez de clear+append total (importante se o histórico crescer muito)
 - Gráfico de comparativo mês a mês
-- Checklist repensado para o polegar (última tela ainda não redesenhada para mobile)
 - Ambiente de staging — hoje se edita a planilha de produção direto
 - Total de gastos com tag "Férias/" separado
 - Adicionar a Luanna como segunda usuária de teste no Google Cloud

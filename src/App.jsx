@@ -598,7 +598,7 @@ function projetarParcelas(transacoes,ajustes,dict,cartoes,mesBase,horizonte){
 }
 
 // ── Styles ────────────────────────────────────────────────────────────────────
-const inp={fontSize:13,padding:"6px 10px",borderRadius:8,border:`1px solid ${C.border}`,background:C.surfaceAlt,color:C.text,width:"100%",boxSizing:"border-box",outline:"none"};
+const inp={fontSize:"var(--fs-body)",padding:"6px 10px",borderRadius:8,border:`1px solid ${C.border}`,background:C.surfaceAlt,color:C.text,width:"100%",boxSizing:"border-box",outline:"none"};
 const sel={...inp,cursor:"pointer"};
 // Versão mobile dos campos: largura total e 40px de alvo. Nas tabelas os
 // campos têm largura fixa em px porque disputam a coluna; no cartão cada um
@@ -606,8 +606,8 @@ const sel={...inp,cursor:"pointer"};
 const inpM={...inp,minHeight:40};
 const selM={...sel,minHeight:40};
 const card={background:C.surface,border:`1px solid ${C.borderSoft}`,borderRadius:14,padding:"1rem 1.25rem",marginBottom:12,boxShadow:"0 1px 3px rgba(0,0,0,0.35)"};
-const th={padding:"9px 10px",textAlign:"left",color:C.textMuted,fontWeight:600,fontSize:10,whiteSpace:"nowrap",borderBottom:`1px solid ${C.border}`,textTransform:"uppercase",letterSpacing:"0.06em"};
-const td={padding:"8px 10px",fontSize:13,color:C.text,borderBottom:`1px solid ${C.borderSoft}`};
+const th={padding:"9px 10px",textAlign:"left",color:C.textMuted,fontWeight:600,fontSize:"var(--fs-micro)",whiteSpace:"nowrap",borderBottom:`1px solid ${C.border}`,textTransform:"uppercase",letterSpacing:"0.06em"};
+const td={padding:"8px 10px",fontSize:"var(--fs-body)",color:C.text,borderBottom:`1px solid ${C.borderSoft}`};
 
 // ── Ordenação das tabelas ─────────────────────────────────────────────────────
 // Clicar no cabeçalho alterna asc → desc → sem ordenação. O terceiro estado não
@@ -698,7 +698,7 @@ function BottomNav({tabs,tab,onTab}){
           return(
             <button key={t.l} onClick={()=>onTab(t.idx)} title={t.l}
               aria-current={ativo?"page":undefined}
-              className={cn("flex min-h-[56px] flex-col items-center justify-center gap-1 text-[10px] transition-colors",
+              className={cn("flex min-h-[56px] flex-col items-center justify-center gap-1 text-micro transition-colors",
                 ativo?"font-semibold text-gf-teal-600":"font-medium text-gf-text-muted active:text-gf-text-dim")}>
               <t.Icon className="size-[19px]" strokeWidth={ativo?2.4:1.7}/>
               <span className="leading-none">{t.curto}</span>
@@ -729,9 +729,9 @@ function PainelResponsivo({isMobile,onClose,titulo,descricao,children,wide}){
           className="max-h-[88vh] gap-0 rounded-t-2xl border-gf-border bg-gf-surface p-0">
           <SheetHeader className="flex-row items-start justify-between gap-2 space-y-0 px-4 pt-4 pb-2 text-left">
             <div className="min-w-0">
-              <SheetTitle className="text-[15px] font-semibold text-gf-text">{titulo}</SheetTitle>
+              <SheetTitle className="text-lead font-semibold text-gf-text">{titulo}</SheetTitle>
               {/* Radix exige descricao acessivel; sem texto, fica so' para leitor de tela. */}
-              <SheetDescription className={descricao?"mt-1 text-xs leading-relaxed text-gf-text-muted":"sr-only"}>
+              <SheetDescription className={descricao?"mt-1 text-small leading-relaxed text-gf-text-muted":"sr-only"}>
                 {descricao||titulo}
               </SheetDescription>
             </div>
@@ -750,11 +750,11 @@ function PainelResponsivo({isMobile,onClose,titulo,descricao,children,wide}){
   return(
     <Modal onClose={onClose} wide={wide}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:descricao?6:14}}>
-        <h3 style={{fontSize:15,fontWeight:600,margin:0,color:C.text}}>{titulo}</h3>
+        <h3 style={{fontSize:"var(--fs-lead)",fontWeight:600,margin:0,color:C.text}}>{titulo}</h3>
         <button onClick={onClose} aria-label="Fechar"
           style={{background:"none",border:"none",cursor:"pointer",color:C.textMuted,fontSize:20}}>✕</button>
       </div>
-      {descricao&&<p style={{fontSize:12,color:C.textMuted,margin:"0 0 14px",lineHeight:1.6}}>{descricao}</p>}
+      {descricao&&<p style={{fontSize:"var(--fs-small)",color:C.textMuted,margin:"0 0 14px",lineHeight:1.6}}>{descricao}</p>}
       {children}
     </Modal>
   );
@@ -792,8 +792,8 @@ function CabecalhoTela({titulo,sub,children}){
   return(
     <div className="mb-3 flex flex-col gap-2.5 md:flex-row md:items-center md:justify-between md:gap-3">
       <div className="min-w-0">
-        <div className="text-sm font-semibold text-gf-text">{titulo}</div>
-        {sub&&<div className="mt-0.5 text-[11px] text-gf-text-muted">{sub}</div>}
+        <div className="text-strong font-semibold text-gf-text">{titulo}</div>
+        {sub&&<div className="mt-0.5 text-meta text-gf-text-muted">{sub}</div>}
       </div>
       <div className="flex shrink-0 gap-2 [&>button]:min-h-10 [&>button]:flex-1 [&>button]:justify-center md:[&>button]:min-h-0 md:[&>button]:flex-none">
         {children}
@@ -806,7 +806,7 @@ function CabecalhoTela({titulo,sub,children}){
 function CampoCard({label,largo,children}){
   return(
     <div className={largo?"col-span-2":undefined}>
-      <span className="mb-1 block text-[10px] uppercase tracking-wide text-gf-text-muted">{label}</span>
+      <span className="mb-1 block text-micro uppercase tracking-wide text-gf-text-muted">{label}</span>
       {children}
     </div>
   );
@@ -826,7 +826,7 @@ function CardForm({children,onRemover,rodape}){
       <div className="grid grid-cols-2 gap-2.5">{children}</div>
       {(onRemover||rodape)&&(
         <div className="mt-3 flex items-center justify-between gap-2">
-          <div className="min-w-0 text-[11px] text-gf-text-muted">{rodape}</div>
+          <div className="min-w-0 text-meta text-gf-text-muted">{rodape}</div>
           {onRemover&&<Btn danger small style={{minHeight:40}} onClick={onRemover}>✕ Remover</Btn>}
         </div>
       )}
@@ -842,7 +842,7 @@ function BarraOrdenacao({cols,sort,definir}){
     <div className="mb-2.5 flex items-center gap-1.5">
       <select value={col} onChange={e=>definir(e.target.value||null,"asc")}
         aria-label="Ordenar por"
-        className="h-10 min-w-0 flex-1 rounded-lg border border-gf-border bg-gf-surface-alt px-2.5 text-xs text-gf-text">
+        className="h-10 min-w-0 flex-1 rounded-lg border border-gf-border bg-gf-surface-alt px-2.5 text-small text-gf-text">
         <option value="">Ordem original</option>
         {opcoes.map(c=><option key={c} value={c}>{c}</option>)}
       </select>
@@ -868,7 +868,7 @@ function Thead({cols,sort,toggle}){
               :"Decrescente — clique para voltar ao normal"}
             style={{...th,cursor:"pointer",userSelect:"none",color:ativo?C.teal600:C.textMuted}}>
             {c}
-            <span style={{marginLeft:4,fontSize:9,opacity:ativo?1:0.3}}>
+            <span style={{marginLeft:4,fontSize:"var(--fs-micro)",opacity:ativo?1:0.3}}>
               {ativo?(sort.dir==="asc"?"▲":"▼"):"⇅"}
             </span>
           </th>
@@ -891,7 +891,7 @@ function Badge({color,children}){
   const t=color==="new"?{bg:C.amber50,c:C.amber600,b:C.amber100}
     :color==="info"?{bg:C.blue50,c:C.blue600,b:C.blue100}
     :{bg:C.green50,c:C.green600,b:C.green100};
-  return <span style={{fontSize:10,padding:"3px 8px",borderRadius:10,fontWeight:600,background:t.bg,color:t.c,border:`1px solid ${t.b}`}}>{children}</span>;
+  return <span style={{fontSize:"var(--fs-micro)",padding:"3px 8px",borderRadius:10,fontWeight:600,background:t.bg,color:t.c,border:`1px solid ${t.b}`}}>{children}</span>;
 }
 
 const ACCENTS={
@@ -929,15 +929,15 @@ function MetricCard({label,value,sub,accent,icon,children,destaque}){
   return(
     <div className={cn("rounded-xl border p-3.5 md:rounded-2xl md:p-4",a.card)}>
       <div className="mb-1.5 flex items-center gap-1.5">
-        {icon&&<span className="shrink-0 text-[13px] leading-none opacity-80">{icon}</span>}
-        <span className={cn("truncate text-[10px] font-bold tracking-[0.07em] uppercase opacity-80",a.texto)}>
+        {icon&&<span className="shrink-0 text-body leading-none opacity-80">{icon}</span>}
+        <span className={cn("truncate text-micro font-bold tracking-[0.07em] uppercase opacity-80",a.texto)}>
           {label}
         </span>
       </div>
       <div className={cn("font-bold tracking-tight tabular-nums",
-        destaque?"text-[28px] leading-none md:text-4xl":"text-xl leading-tight md:text-[22px]",
+        destaque?"text-hero leading-none md:text-hero":"text-title leading-tight md:text-title",
         a.texto)}>{value}</div>
-      {sub&&<div className={cn("mt-1 text-[11px] leading-snug opacity-70",a.texto)}>{sub}</div>}
+      {sub&&<div className={cn("mt-1 text-meta leading-snug opacity-70",a.texto)}>{sub}</div>}
       {children}
     </div>
   );
@@ -965,7 +965,7 @@ function DetalheCard({cor,linhas}){
             <span className="shrink-0 tabular-nums">{fmtBRL(l.valor)}</span>
           </>
         );
-        const cls=cn("flex w-full items-center justify-between gap-2 py-[5px] text-left text-[11px]",
+        const cls=cn("flex w-full items-center justify-between gap-2 py-[5px] text-left text-meta",
           l.forte?"font-bold opacity-95":"font-normal opacity-75");
         // Linha sem itens por trás não vira botão: um clique que não abre nada
         // é pior do que não ter clique.
@@ -988,14 +988,14 @@ function ProgressBar({pct,color}){
 }
 
 function SectionLabel({children}){
-  return <div style={{fontSize:10,fontWeight:700,color:C.textMuted,textTransform:"uppercase",letterSpacing:"0.09em",padding:"14px 0 5px"}}>{children}</div>;
+  return <div style={{fontSize:"var(--fs-micro)",fontWeight:700,color:C.textMuted,textTransform:"uppercase",letterSpacing:"0.09em",padding:"14px 0 5px"}}>{children}</div>;
 }
 
 function EmptyState({icon,children}){
   return(
     <div style={{textAlign:"center",padding:"2.5rem 0",color:C.textMuted}}>
       <div style={{fontSize:34,marginBottom:10,opacity:0.5}}>{icon}</div>
-      <p style={{fontSize:13,margin:0}}>{children}</p>
+      <p style={{fontSize:"var(--fs-body)",margin:0}}>{children}</p>
     </div>
   );
 }
@@ -1072,8 +1072,8 @@ const linkMeuPluggy=itemId=>`https://meu.pluggy.ai/connections/${itemId}`;
 function BarraOpenFinance({temOF,ultimoSync,pluggyEm,erroSync,conciliacao,faturasPendentes=[],conexoes,pedindoSync,onAtualizar,onCartoes,isMobile}){
   if(!temOF) return(
     <div style={{...card,borderColor:C.amber100,background:C.amberSoft}}>
-      <div style={{fontSize:13,color:C.amber600,fontWeight:600,marginBottom:4}}>Open Finance não configurado</div>
-      <div style={{fontSize:12,color:C.textDim,lineHeight:1.6}}>
+      <div style={{fontSize:"var(--fs-body)",color:C.amber600,fontWeight:600,marginBottom:4}}>Open Finance não configurado</div>
+      <div style={{fontSize:"var(--fs-small)",color:C.textDim,lineHeight:1.6}}>
         Instale o Apps Script e rode <code>sincronizarAgora()</code>. Passo a passo em <code>docs/SETUP-PLUGGY.md</code>.
       </div>
     </div>
@@ -1092,12 +1092,12 @@ function BarraOpenFinance({temOF,ultimoSync,pluggyEm,erroSync,conciliacao,fatura
     <div style={{...card,padding:"0.85rem 1rem"}}>
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,flexWrap:"wrap"}}>
         <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-          <span style={{fontSize:11,color:syncVelho?C.amber600:C.textMuted,
+          <span style={{fontSize:"var(--fs-meta)",color:syncVelho?C.amber600:C.textMuted,
             fontWeight:syncVelho?600:400}}>
             {ultimoSync?`Sincronizado ${tempoRelativo(ultimoSync)}`:"Nunca sincronizado"}
           </span>
           {pluggyEm&&(
-            <span style={{fontSize:11,color:bancoVelho?C.amber600:C.textMuted,
+            <span style={{fontSize:"var(--fs-meta)",color:bancoVelho?C.amber600:C.textMuted,
               fontWeight:bancoVelho?600:400}}
               title="Quando o Pluggy foi ao banco. Sincronizar relê o Pluggy, não o banco.">
               · banco lido {tempoRelativo(pluggyEm)}
@@ -1119,13 +1119,13 @@ function BarraOpenFinance({temOF,ultimoSync,pluggyEm,erroSync,conciliacao,fatura
       </div>
 
       {erroSync&&(
-        <div style={{marginTop:10,fontSize:12,color:C.red600,background:C.red50,border:`1px solid ${C.red100}`,padding:"8px 10px",borderRadius:8}}>
+        <div style={{marginTop:10,fontSize:"var(--fs-small)",color:C.red600,background:C.red50,border:`1px solid ${C.red100}`,padding:"8px 10px",borderRadius:8}}>
           ⚠️ {erroSync}
         </div>
       )}
 
       {bancoVelho&&(
-        <div style={{marginTop:10,fontSize:12,color:C.amber600,background:C.amberSoft,border:`1px solid ${C.amber100}`,padding:"10px 12px",borderRadius:8,lineHeight:1.6}}>
+        <div style={{marginTop:10,fontSize:"var(--fs-small)",color:C.amber600,background:C.amberSoft,border:`1px solid ${C.amber100}`,padding:"10px 12px",borderRadius:8,lineHeight:1.6}}>
           <strong>O Pluggy não vai ao banco desde {tempoRelativo(pluggyEm)}.</strong>{" "}
           Compras mais recentes que isso ainda não existem aqui, e o 🔄 acima não
           resolve — ele só relê o Pluggy.
@@ -1133,7 +1133,7 @@ function BarraOpenFinance({temOF,ultimoSync,pluggyEm,erroSync,conciliacao,fatura
             {itens.map(it=>(
               <a key={it.itemId} href={linkMeuPluggy(it.itemId)} target="_blank" rel="noreferrer"
                 className="gf-btn"
-                style={{fontSize:11,padding:"6px 12px",borderRadius:8,fontWeight:700,
+                style={{fontSize:"var(--fs-meta)",padding:"6px 12px",borderRadius:8,fontWeight:700,
                   textDecoration:"none",background:C.amber600,color:"#241A05",
                   border:`1px solid ${C.amber600}`}}>
                 ↗ Atualizar {it.nome} no Meu Pluggy
@@ -1148,12 +1148,12 @@ function BarraOpenFinance({temOF,ultimoSync,pluggyEm,erroSync,conciliacao,fatura
       )}
 
       {faturasPendentes.length>0&&(
-        <div style={{marginTop:10,fontSize:12,color:C.amber600,background:C.amber50,border:`1px solid ${C.amber100}`,padding:"9px 11px",borderRadius:8,lineHeight:1.55}}>
+        <div style={{marginTop:10,fontSize:"var(--fs-small)",color:C.amber600,background:C.amber50,border:`1px solid ${C.amber100}`,padding:"9px 11px",borderRadius:8,lineHeight:1.55}}>
           <strong>A fatura já fechou no banco, mas ainda não chegou pelo Open Finance</strong>
           <div style={{color:C.textDim}}>
             {faturasPendentes.map(c=>c.nome).join(" · ")}
           </div>
-          <div style={{color:C.textMuted,fontSize:11,marginTop:4}}>
+          <div style={{color:C.textMuted,fontSize:"var(--fs-meta)",marginTop:4}}>
             O total abaixo está <strong>incompleto</strong>: faltam as compras que só
             aparecem quando o Pluggy entrega a fatura fechada. Confira o valor na
             fatura do banco antes de fechar o mês.
@@ -1162,7 +1162,7 @@ function BarraOpenFinance({temOF,ultimoSync,pluggyEm,erroSync,conciliacao,fatura
       )}
 
       {divergentes.length>0&&(
-        <div style={{marginTop:10,fontSize:12,color:C.amber600,background:C.amber50,border:`1px solid ${C.amber100}`,padding:"9px 11px",borderRadius:8,lineHeight:1.55}}>
+        <div style={{marginTop:10,fontSize:"var(--fs-small)",color:C.amber600,background:C.amber50,border:`1px solid ${C.amber100}`,padding:"9px 11px",borderRadius:8,lineHeight:1.55}}>
           <strong>Total diferente do banco</strong>
           {divergentes.map(c=>(
             <div key={c.accountId} style={{color:C.textDim}}>
@@ -1170,14 +1170,14 @@ function BarraOpenFinance({temOF,ultimoSync,pluggyEm,erroSync,conciliacao,fatura
               <strong style={{color:C.amber600}}>{c.dif>0?"+":""}{fmtBRL(c.dif)}</strong>
             </div>
           ))}
-          <div style={{color:C.textMuted,fontSize:11,marginTop:4}}>
+          <div style={{color:C.textMuted,fontSize:"var(--fs-meta)",marginTop:4}}>
             Normalmente é lançamento que o Pluggy não entregou. Confira na fatura do banco.
           </div>
         </div>
       )}
 
       {!isMobile&&conciliacao.length>0&&divergentes.length===0&&(
-        <div style={{marginTop:8,fontSize:11,color:C.textMuted}}>
+        <div style={{marginTop:8,fontSize:"var(--fs-meta)",color:C.textMuted}}>
           {conciliacao.map(c=>`${c.nome}: ${fmtBRL(c.nosso)}`).join("  ·  ")}
         </div>
       )}
@@ -1238,7 +1238,7 @@ function CardFatura({r,pessoas,onCampo,onIgnorar,onAprender,onLegado,onRemoverLe
   const semDono=!r.dono&&!pag&&!r.ignorada;
   // A fatura do Open Finance e a linha legada gravam campos com nomes diferentes.
   const set=(campoOF,campoLeg,v)=>leg?onLegado(r.id,campoLeg,v):onCampo(r,campoOF,v);
-  const rotulo="mb-1 block text-[10px] uppercase tracking-wide text-gf-text-muted";
+  const rotulo="mb-1 block text-micro uppercase tracking-wide text-gf-text-muted";
 
   return(
     <div className={cn("rounded-xl border",
@@ -1248,10 +1248,10 @@ function CardFatura({r,pessoas,onCampo,onIgnorar,onAprender,onLegado,onRemoverLe
       <button onClick={()=>setAberto(a=>!a)} aria-expanded={aberto}
         className="flex w-full items-start gap-2.5 p-3 text-left">
         <div className="min-w-0 flex-1">
-          <div className={cn("line-clamp-2 text-[13px] leading-snug font-medium break-words text-gf-text",r.ignorada&&"line-through")}>
+          <div className={cn("line-clamp-2 text-body leading-snug font-medium break-words text-gf-text",r.ignorada&&"line-through")}>
             {r.nome}
           </div>
-          <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-[10px] text-gf-text-muted">
+          <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-micro text-gf-text-muted">
             <span>{dataCurta(r.data)||r.data}</span>
             {r.cartao&&<><span>·</span><span>{r.cartao}</span></>}
             {r.parcela&&<><span>·</span><span>{r.parcela}</span></>}
@@ -1260,7 +1260,7 @@ function CardFatura({r,pessoas,onCampo,onIgnorar,onAprender,onLegado,onRemoverLe
             {leg&&<span>legado</span>}
           </div>
           <div className="mt-1.5 flex flex-wrap items-center gap-1">
-            <span className={cn("rounded-full border px-1.5 py-px text-[10px]",
+            <span className={cn("rounded-full border px-1.5 py-px text-micro",
               semDono
                 ?"border-gf-amber-100 bg-gf-amber-50 font-semibold text-gf-amber-600"
                 :classeDono(r.dono))}>
@@ -1269,15 +1269,15 @@ function CardFatura({r,pessoas,onCampo,onIgnorar,onAprender,onLegado,onRemoverLe
             {/* VARIÁVEL é o padrão e não informa nada — mostrar em toda linha só
                 diluía os chips que importam. Continua editável ao expandir. */}
             {!pag&&r.parcelas&&r.parcelas!=="VARIÁVEL"&&(
-              <span className="rounded-full border border-gf-border bg-gf-surface px-1.5 py-px text-[10px] text-gf-text-dim">
+              <span className="rounded-full border border-gf-border bg-gf-surface px-1.5 py-px text-micro text-gf-text-dim">
                 {r.parcelas}
               </span>
             )}
-            {r.obs&&<span className="min-w-0 truncate text-[10px] text-gf-text-muted">{r.obs}</span>}
+            {r.obs&&<span className="min-w-0 truncate text-micro text-gf-text-muted">{r.obs}</span>}
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-1.5">
-          <span className={cn("text-[13px] font-semibold tabular-nums",
+          <span className={cn("text-body font-semibold tabular-nums",
             r.valor<0?"text-gf-green-600":"text-gf-text")}>{fmtBRL(r.valor)}</span>
           <ChevronDown className={cn("size-4 shrink-0 text-gf-text-muted transition-transform",aberto&&"rotate-180")}/>
         </div>
@@ -1347,21 +1347,21 @@ function TabelaFatura({titulo,subtitulo,linhas,isMobile,pessoas,filtro,setFiltro
       <div className="mb-3 flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-sm font-semibold text-gf-text">{titulo}</span>
+            <span className="text-strong font-semibold text-gf-text">{titulo}</span>
             {novos>0&&<Badge color="new">{novos} para revisar</Badge>}
           </div>
-          <div className="mt-0.5 text-[11px] leading-snug text-gf-text-muted">
+          <div className="mt-0.5 text-meta leading-snug text-gf-text-muted">
             {linhas.length} lançamentos · {subtitulo}
           </div>
         </div>
         <div className="shrink-0 text-right">
-          <div className="text-lg font-bold tracking-tight tabular-nums text-gf-text md:text-xl">{fmtBRL(total)}</div>
-          <div className="text-[10px] text-gf-text-muted">total da fatura</div>
+          <div className="text-title font-bold tracking-tight tabular-nums text-gf-text md:text-title">{fmtBRL(total)}</div>
+          <div className="text-micro text-gf-text-muted">total da fatura</div>
         </div>
       </div>
 
       {semDono>0&&(
-        <div style={{fontSize:12,color:C.amber600,background:C.amberSoft,border:`1px solid ${C.amber100}`,padding:"7px 10px",borderRadius:8,marginBottom:10}}>
+        <div style={{fontSize:"var(--fs-small)",color:C.amber600,background:C.amberSoft,border:`1px solid ${C.amber100}`,padding:"7px 10px",borderRadius:8,marginBottom:10}}>
           {semDono} lançamento(s) sem dono — <strong>não entram no checklist</strong> até você classificar.
         </div>
       )}
@@ -1374,7 +1374,7 @@ function TabelaFatura({titulo,subtitulo,linhas,isMobile,pessoas,filtro,setFiltro
       <div className="mb-2.5 flex gap-1.5 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden md:flex-wrap md:overflow-visible md:pb-0">
         {filtros.map(f=>(
           <button key={f} onClick={()=>setFiltro(f)}
-            className={cn("gf-btn shrink-0 rounded-full border px-3 py-1.5 text-[11px] transition-colors",
+            className={cn("gf-btn shrink-0 rounded-full border px-3 py-1.5 text-meta transition-colors",
               filtro===f
                 ?"border-gf-teal-100 bg-gf-teal-50 font-bold text-gf-teal-600"
                 :"border-gf-border font-medium text-gf-text-dim")}>{f}</button>
@@ -1386,7 +1386,7 @@ function TabelaFatura({titulo,subtitulo,linhas,isMobile,pessoas,filtro,setFiltro
         {[["ignoradas",mostrarIgnoradas,setMostrarIgnoradas],
           ["pagamentos",mostrarPagamentos,setMostrarPagamentos]].map(([rot,val,set])=>(
           <button key={rot} onClick={()=>set(!val)} aria-pressed={val}
-            className={cn("gf-btn shrink-0 rounded-full border px-3 py-1.5 text-[11px] transition-colors",
+            className={cn("gf-btn shrink-0 rounded-full border px-3 py-1.5 text-meta transition-colors",
               val
                 ?"border-gf-blue-100 bg-gf-blue-50 font-semibold text-gf-blue-600"
                 :"border-gf-border font-medium text-gf-text-muted")}>
@@ -1408,7 +1408,7 @@ function TabelaFatura({titulo,subtitulo,linhas,isMobile,pessoas,filtro,setFiltro
         </>
       ):(
       <div style={{overflowX:"auto"}}>
-        <table style={{width:"100%",fontSize:12,borderCollapse:"collapse",minWidth:680}}>
+        <table style={{width:"100%",fontSize:"var(--fs-small)",borderCollapse:"collapse",minWidth:680}}>
           <Thead cols={COLS_FATURA} sort={sort} toggle={toggleSort}/>
           <tbody>
             {vis.map(r=>{
@@ -1421,14 +1421,14 @@ function TabelaFatura({titulo,subtitulo,linhas,isMobile,pessoas,filtro,setFiltro
                   <td style={{...td,color:C.textMuted,whiteSpace:"nowrap"}}>{dataCurta(r.data)||r.data}</td>
                   <td style={td}>
                     <div style={{fontWeight:500,textDecoration:r.ignorada?"line-through":"none"}}>{r.nome}</div>
-                    <div style={{fontSize:10,color:C.textMuted,display:"flex",gap:6}}>
+                    <div style={{fontSize:"var(--fs-micro)",color:C.textMuted,display:"flex",gap:6}}>
                       {r.parcela&&<span>{r.parcela}</span>}
                       {pag&&<span style={{color:C.blue600}}>pagamento</span>}
                       {r.natureza==="ESTORNO"&&<span style={{color:C.green600}}>estorno</span>}
                       {leg&&<span style={{color:C.textMuted}}>legado</span>}
                     </div>
                   </td>
-                  <td style={{...td,color:C.textDim,whiteSpace:"nowrap",fontSize:11}}>{r.cartao||"—"}</td>
+                  <td style={{...td,color:C.textDim,whiteSpace:"nowrap",fontSize:"var(--fs-meta)"}}>{r.cartao||"—"}</td>
                   <td style={{...td,fontWeight:600,fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap",
                     color:r.valor<0?C.green600:C.text}}>{fmtBRL(r.valor)}</td>
                   <td style={td}>
@@ -1472,8 +1472,8 @@ function TabelaFatura({titulo,subtitulo,linhas,isMobile,pessoas,filtro,setFiltro
 function ConfirmModal({titulo,texto,onConfirm,onClose}){
   return(
     <Modal onClose={onClose}>
-      <h3 style={{fontSize:15,fontWeight:600,margin:"0 0 8px",color:C.text}}>{titulo}</h3>
-      <p style={{fontSize:13,color:C.textDim,margin:"0 0 18px",lineHeight:1.6}}>{texto}</p>
+      <h3 style={{fontSize:"var(--fs-lead)",fontWeight:600,margin:"0 0 8px",color:C.text}}>{titulo}</h3>
+      <p style={{fontSize:"var(--fs-body)",color:C.textDim,margin:"0 0 18px",lineHeight:1.6}}>{texto}</p>
       <div style={{display:"flex",gap:8}}>
         <Btn danger onClick={()=>{onConfirm();onClose();}}>Confirmar</Btn>
         <Btn onClick={onClose}>Cancelar</Btn>
@@ -1510,43 +1510,43 @@ function CardCompra({c}){
     <div className="rounded-xl border border-gf-border-soft bg-gf-surface-alt p-3">
       <div className="flex items-start gap-2.5">
         <div className="min-w-0 flex-1">
-          <div className="line-clamp-2 text-[13px] leading-snug font-medium break-words text-gf-text" title={c.nome}>{c.nome}</div>
+          <div className="line-clamp-2 text-body leading-snug font-medium break-words text-gf-text" title={c.nome}>{c.nome}</div>
           {/* A obs é o que você escreveu na fatura — costuma ser o nome de verdade
               da compra, já que a descrição do banco vem cifrada. */}
-          {c.obs&&<div className="truncate text-[11px] text-gf-text-dim" title={c.obs}>{c.obs}</div>}
-          <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-[10px] text-gf-text-muted">
+          {c.obs&&<div className="truncate text-meta text-gf-text-dim" title={c.obs}>{c.obs}</div>}
+          <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-micro text-gf-text-muted">
             <span>{c.cartao}</span>
             <span>·</span>
             <span className={c.dono?corDono:"text-gf-amber-600"}>{c.dono||"sem dono"}</span>
           </div>
         </div>
         <div className="shrink-0 text-right">
-          <div className="text-[13px] font-semibold tabular-nums text-gf-text">{fmtBRL(c.valorParcela)}</div>
-          <div className="text-[10px] text-gf-text-muted">por mês</div>
+          <div className="text-body font-semibold tabular-nums text-gf-text">{fmtBRL(c.valorParcela)}</div>
+          <div className="text-micro text-gf-text-muted">por mês</div>
         </div>
       </div>
 
       <div className="mt-2.5 grid grid-cols-3 gap-2 border-t border-gf-border-soft pt-2.5 text-center">
         <div>
-          <div className="text-[12px] font-semibold tabular-nums text-gf-text">
+          <div className="text-small font-semibold tabular-nums text-gf-text">
             {String(c.proximaNum).padStart(2,"0")}/{String(c.parcelaTotal).padStart(2,"0")}
           </div>
-          <div className="text-[10px] text-gf-text-muted">próxima</div>
+          <div className="text-micro text-gf-text-muted">próxima</div>
         </div>
         <div>
-          <div className="text-[12px] font-semibold tabular-nums text-gf-text">{c.restantes}×</div>
-          <div className="text-[10px] text-gf-text-muted">restam</div>
+          <div className="text-small font-semibold tabular-nums text-gf-text">{c.restantes}×</div>
+          <div className="text-micro text-gf-text-muted">restam</div>
         </div>
         <div>
-          <div className="text-[12px] font-semibold tabular-nums text-gf-text">{fmtBRL(c.falta)}</div>
-          <div className="text-[10px] text-gf-text-muted">falta</div>
+          <div className="text-small font-semibold tabular-nums text-gf-text">{fmtBRL(c.falta)}</div>
+          <div className="text-micro text-gf-text-muted">falta</div>
         </div>
       </div>
 
       <div className="mt-2 flex justify-end">
         {c.terminaEsteMes
           ?<Badge color="ok">termina {mesLabelCurto(c.mesFinal)}</Badge>
-          :<span className="text-[10px] text-gf-text-muted">termina {mesLabelCurto(c.mesFinal)}</span>}
+          :<span className="text-micro text-gf-text-muted">termina {mesLabelCurto(c.mesFinal)}</span>}
       </div>
     </div>
   );
@@ -1582,12 +1582,12 @@ function PainelParcelas({proj,mesRef,isMobile,onVerMes}){
 
       {terminando.length>0&&(
         <div style={{...card,background:C.green50,border:`1px solid ${C.green100}`}}>
-          <div style={{fontSize:13,fontWeight:600,color:C.green600,marginBottom:8}}>
+          <div style={{fontSize:"var(--fs-body)",fontWeight:600,color:C.green600,marginBottom:8}}>
             🎉 Termina em {mesLabel(mesRef)}
           </div>
           {terminando.map(c=>(
             <div key={c.chave} style={{display:"flex",justifyContent:"space-between",gap:10,
-              fontSize:12,color:C.green600,padding:"4px 0",flexWrap:"wrap"}}>
+              fontSize:"var(--fs-small)",color:C.green600,padding:"4px 0",flexWrap:"wrap"}}>
               <span>{c.nome} <span style={{opacity:0.6}}>· última de {c.parcelaTotal}</span></span>
               <strong style={{fontVariantNumeric:"tabular-nums"}}>{fmtBRL(c.valorParcela)}/mês</strong>
             </div>
@@ -1597,7 +1597,7 @@ function PainelParcelas({proj,mesRef,isMobile,onVerMes}){
 
       <div style={card}>
         <SectionLabel>Comprometido por mês</SectionLabel>
-        <p style={{fontSize:11,color:C.textMuted,margin:"0 0 12px",lineHeight:1.6}}>
+        <p style={{fontSize:"var(--fs-meta)",color:C.textMuted,margin:"0 0 12px",lineHeight:1.6}}>
           Só compras parceladas. Barra listrada é projeção — a parcela ainda não
           apareceu na fatura, mas vai. Clique num mês para ver o detalhe.
         </p>
@@ -1610,7 +1610,7 @@ function PainelParcelas({proj,mesRef,isMobile,onVerMes}){
               <button key={m.mesRef} className="gf-btn" onClick={()=>onVerMes(m)}
                 style={{display:"block",width:"100%",textAlign:"left",background:"transparent",
                   border:"none",borderRadius:8,padding:"6px 4px",cursor:"pointer"}}>
-                <div style={{display:"flex",justifyContent:"space-between",fontSize:12,marginBottom:4}}>
+                <div style={{display:"flex",justifyContent:"space-between",fontSize:"var(--fs-small)",marginBottom:4}}>
                   <span style={{color:m.mesRef===mesRef?C.blue600:C.textDim,
                     fontWeight:m.mesRef===mesRef?700:500}}>
                     {mesLabelCurto(m.mesRef)}
@@ -1639,7 +1639,7 @@ function PainelParcelas({proj,mesRef,isMobile,onVerMes}){
           </>
         ):(
         <div style={{overflowX:"auto"}}>
-          <table style={{width:"100%",fontSize:12,borderCollapse:"collapse",minWidth:640}}>
+          <table style={{width:"100%",fontSize:"var(--fs-small)",borderCollapse:"collapse",minWidth:640}}>
             <Thead cols={COLS_COMPRAS} sort={sort} toggle={toggleSort}/>
             <tbody>{comprasOrd.map(c=>(
               <tr key={c.chave}>
@@ -1715,7 +1715,7 @@ function PainelConfig({dict,onDict,pessoas,onPessoas,usoDoDict,isMobile}){
     <div>
       <div style={card}>
         <SectionLabel>Pessoas</SectionLabel>
-        <p style={{fontSize:12,color:C.textMuted,margin:"0 0 12px",lineHeight:1.6}}>
+        <p style={{fontSize:"var(--fs-small)",color:C.textMuted,margin:"0 0 12px",lineHeight:1.6}}>
           Quem mais usa o cartão de vocês. Aparecem no campo Dono e podem entrar
           na divisão de um lançamento. O que for atribuído a elas sai das despesas
           do casal e vira “a receber” no checklist.
@@ -1731,13 +1731,13 @@ function PainelConfig({dict,onDict,pessoas,onPessoas,usoDoDict,isMobile}){
           :pessoas.map(p=>(
             <div key={p} style={{display:"flex",alignItems:"center",justifyContent:"space-between",
               gap:10,padding:"9px 0",borderTop:`1px solid ${C.borderSoft}`}}>
-              <span style={{fontSize:13,color:C.text}}>{p}</span>
+              <span style={{fontSize:"var(--fs-body)",color:C.text}}>{p}</span>
               <Btn danger small title="Remover"
                 onClick={()=>onPessoas(pessoas.filter(x=>x!==p))}>✕</Btn>
             </div>
           ))}
         {pessoas.length>0&&(
-          <p style={{fontSize:11,color:C.textMuted,marginTop:10,lineHeight:1.5}}>
+          <p style={{fontSize:"var(--fs-meta)",color:C.textMuted,marginTop:10,lineHeight:1.5}}>
             Remover alguém daqui não mexe nos lançamentos já classificados —
             eles continuam com o nome gravado.
           </p>
@@ -1749,9 +1749,9 @@ function PainelConfig({dict,onDict,pessoas,onPessoas,usoDoDict,isMobile}){
           gap:8,flexWrap:"wrap",marginBottom:4}}>
           <SectionLabel>Dicionário ({dict.length})</SectionLabel>
           <input value={filtroDict} onChange={e=>setFiltroDict(e.target.value)}
-            placeholder="filtrar…" style={{...inp,maxWidth:160,fontSize:12}}/>
+            placeholder="filtrar…" style={{...inp,maxWidth:160,fontSize:"var(--fs-small)"}}/>
         </div>
-        <p style={{fontSize:12,color:C.textMuted,margin:"0 0 12px",lineHeight:1.6}}>
+        <p style={{fontSize:"var(--fs-small)",color:C.textMuted,margin:"0 0 12px",lineHeight:1.6}}>
           Cada padrão casa por trecho da descrição, sem acento e sem
           maiúsculas. É o que faz a fatura chegar classificada sozinha.
         </p>
@@ -1792,7 +1792,7 @@ function PainelConfig({dict,onDict,pessoas,onPessoas,usoDoDict,isMobile}){
               </div>
             </>
           ):<div style={{overflowX:"auto"}}>
-            <table style={{width:"100%",fontSize:12,borderCollapse:"collapse",minWidth:520}}>
+            <table style={{width:"100%",fontSize:"var(--fs-small)",borderCollapse:"collapse",minWidth:520}}>
               <Thead cols={COLS_DICT} sort={sort} toggle={toggleSort}/>
               <tbody>{visiveis.map((d,i)=>{
                 const idx=dict.indexOf(d);
@@ -1828,7 +1828,7 @@ function PainelConfig({dict,onDict,pessoas,onPessoas,usoDoDict,isMobile}){
               })}</tbody>
             </table>
           </div>}
-        <p style={{fontSize:11,color:C.textMuted,marginTop:10,lineHeight:1.5}}>
+        <p style={{fontSize:"var(--fs-meta)",color:C.textMuted,marginTop:10,lineHeight:1.5}}>
           “Usos” conta quantas transações carregadas casam com o padrão. Zero
           costuma ser padrão específico demais — normal em compra parcelada
           antiga, suspeito no resto.
@@ -1920,13 +1920,13 @@ function DonoSelect({value,onChange,pessoas,width,style}){
 
       {abrir&&(
         <Modal onClose={()=>setAbrir(false)}>
-          <h3 style={{fontSize:15,fontWeight:600,margin:"0 0 4px",color:C.text}}>Dividir entre</h3>
-          <p style={{fontSize:12,color:C.textMuted,margin:"0 0 14px",lineHeight:1.6}}>
+          <h3 style={{fontSize:"var(--fs-lead)",fontWeight:600,margin:"0 0 4px",color:C.text}}>Dividir entre</h3>
+          <p style={{fontSize:"var(--fs-small)",color:C.textMuted,margin:"0 0 14px",lineHeight:1.6}}>
             O valor é dividido igualmente entre quem estiver marcado.
           </p>
           {[...CASAL,...pessoas].map(nome=>(
             <label key={nome} style={{display:"flex",alignItems:"center",gap:9,padding:"9px 0",
-              borderTop:`1px solid ${C.borderSoft}`,cursor:"pointer",fontSize:13,color:C.text}}>
+              borderTop:`1px solid ${C.borderSoft}`,cursor:"pointer",fontSize:"var(--fs-body)",color:C.text}}>
               <input type="checkbox" checked={marcados.includes(nome)} onChange={()=>alternar(nome)}
                 style={{accentColor:C.teal600,width:15,height:15,cursor:"pointer"}}/>
               {nome}
@@ -1934,7 +1934,7 @@ function DonoSelect({value,onChange,pessoas,width,style}){
           ))}
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",
             marginTop:16,paddingTop:12,borderTop:`1px solid ${C.border}`,gap:8}}>
-            <span style={{fontSize:12,color:C.textDim}}>
+            <span style={{fontSize:"var(--fs-small)",color:C.textDim}}>
               {marcados.length?`÷${marcados.length} — ${marcados.join(" + ")}`:"ninguém selecionado"}
             </span>
             <div style={{display:"flex",gap:6}}>
@@ -1955,7 +1955,7 @@ function CopyMesModal({dadosMes,mesRef,onClose,onImport}){
   const [sel2,setSel2]=useState({contas:{},investimentos:{},manual:{}});
   if(!prev) return(
     <div style={{padding:"0.5rem"}}>
-      <p style={{fontSize:13,marginBottom:14,color:C.textDim}}>Não há dados em {mesLabel(prevNome)}.</p>
+      <p style={{fontSize:"var(--fs-body)",marginBottom:14,color:C.textDim}}>Não há dados em {mesLabel(prevNome)}.</p>
       <Btn onClick={onClose}>Fechar</Btn>
     </div>
   );
@@ -1975,7 +1975,7 @@ function CopyMesModal({dadosMes,mesRef,onClose,onImport}){
   return(
     <div>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
-        <h3 style={{fontSize:15,fontWeight:600,margin:0,color:C.text}}>Copiar de {mesLabel(prevNome)}</h3>
+        <h3 style={{fontSize:"var(--fs-lead)",fontWeight:600,margin:0,color:C.text}}>Copiar de {mesLabel(prevNome)}</h3>
         <button onClick={onClose} style={{background:"none",border:"none",cursor:"pointer",color:C.textMuted,fontSize:20,lineHeight:1}}>✕</button>
       </div>
       {sections.map(sec=>(
@@ -1985,10 +1985,10 @@ function CopyMesModal({dadosMes,mesRef,onClose,onImport}){
             <Btn small onClick={()=>allToggle(sec.key,sec.items)}>Todos</Btn>
           </div>
           {sec.items.map(item=>(
-            <label key={item.id} style={{display:"flex",alignItems:"center",gap:10,padding:"7px 0",cursor:"pointer",fontSize:13,color:C.text,borderTop:`1px solid ${C.borderSoft}`}}>
+            <label key={item.id} style={{display:"flex",alignItems:"center",gap:10,padding:"7px 0",cursor:"pointer",fontSize:"var(--fs-body)",color:C.text,borderTop:`1px solid ${C.borderSoft}`}}>
               <input type="checkbox" checked={!!sel2[sec.key][item.id]} onChange={()=>toggle(sec.key,item.id)} style={{accentColor:C.teal600,width:15,height:15}}/>
               <span style={{flex:1}}>{item.transacao||item.descricao||item.nome}</span>
-              <span style={{color:C.textDim,fontSize:12,fontVariantNumeric:"tabular-nums"}}>{fmtBRL(parseBRL(item.valor||0))}</span>
+              <span style={{color:C.textDim,fontSize:"var(--fs-small)",fontVariantNumeric:"tabular-nums"}}>{fmtBRL(parseBRL(item.valor||0))}</span>
             </label>
           ))}
         </div>
@@ -2612,11 +2612,11 @@ export default function App(){
       <div style={{minHeight:"100vh",background:C.bg,display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"system-ui,sans-serif",padding:16}}>
         <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:20,padding:"2.5rem 2rem",maxWidth:380,width:"100%",textAlign:"center",boxShadow:"0 18px 50px rgba(0,0,0,0.5)"}}>
           <div style={{width:56,height:56,borderRadius:16,background:C.teal50,border:`1px solid ${C.teal100}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:26,margin:"0 auto 16px"}}>📊</div>
-          <h2 style={{fontSize:20,fontWeight:700,margin:"0 0 6px",color:C.text}}>Gestão Financeira</h2>
-          <p style={{fontSize:13,color:C.textMuted,margin:"0 0 24px"}}>Caulin &amp; Luanna</p>
-          <p style={{fontSize:13,color:C.textDim,marginBottom:24,lineHeight:1.6}}>Conecte sua conta Google para carregar e salvar os dados automaticamente na planilha.</p>
-          {authStatus==="error"&&<p style={{fontSize:12,color:C.red600,marginBottom:12,background:C.red50,border:`1px solid ${C.red100}`,padding:"8px 12px",borderRadius:8}}>Erro ao conectar. Tente novamente.</p>}
-          <button className="gf-btn" onClick={handleLogin} disabled={authStatus==="loading"} style={{width:"100%",padding:"12px",borderRadius:10,border:"none",background:C.teal600,color:"#06231C",cursor:authStatus==="loading"?"wait":"pointer",fontSize:15,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>
+          <h2 style={{fontSize:"var(--fs-title)",fontWeight:700,margin:"0 0 6px",color:C.text}}>Gestão Financeira</h2>
+          <p style={{fontSize:"var(--fs-body)",color:C.textMuted,margin:"0 0 24px"}}>Caulin &amp; Luanna</p>
+          <p style={{fontSize:"var(--fs-body)",color:C.textDim,marginBottom:24,lineHeight:1.6}}>Conecte sua conta Google para carregar e salvar os dados automaticamente na planilha.</p>
+          {authStatus==="error"&&<p style={{fontSize:"var(--fs-small)",color:C.red600,marginBottom:12,background:C.red50,border:`1px solid ${C.red100}`,padding:"8px 12px",borderRadius:8}}>Erro ao conectar. Tente novamente.</p>}
+          <button className="gf-btn" onClick={handleLogin} disabled={authStatus==="loading"} style={{width:"100%",padding:"12px",borderRadius:10,border:"none",background:C.teal600,color:"#06231C",cursor:authStatus==="loading"?"wait":"pointer",fontSize:"var(--fs-lead)",fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>
             {authStatus==="loading"?"Conectando...":"🔑 Entrar com Google"}
           </button>
         </div>
@@ -2631,16 +2631,16 @@ export default function App(){
       {/* Topbar */}
       <header className="sticky top-0 z-40 flex h-14 items-center justify-between gap-2 border-b border-gf-border bg-gf-surface/95 px-3 backdrop-blur-md md:h-[58px] md:px-6">
         <div className="flex min-w-0 items-center gap-2.5">
-          <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-gf-teal-50 text-base">📊</span>
+          <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-gf-teal-50 text-lead">📊</span>
           {/* O titulo some no mobile: em 390px ele empurrava o seletor de mes. */}
           <div className="hidden leading-tight md:block">
-            <div className="text-sm font-semibold text-gf-text">Gestão Financeira</div>
-            <div className="text-[11px] text-gf-text-muted">Caulin &amp; Luanna</div>
+            <div className="text-strong font-semibold text-gf-text">Gestão Financeira</div>
+            <div className="text-meta text-gf-text-muted">Caulin &amp; Luanna</div>
           </div>
           {syncStatus&&(
             // syncFalhou cobre "erro ao..." e as mensagens com ⚠️. Antes olhava so'
             // o prefixo "erro" e uma falha de gravação aparecia em verde.
-            <span className={cn("truncate rounded-full border px-2.5 py-[3px] text-[11px]",
+            <span className={cn("truncate rounded-full border px-2.5 py-[3px] text-meta",
               syncFalhou
                 ?"border-gf-red-100 bg-gf-red-50 text-gf-red-600"
                 :"border-gf-teal-100 bg-gf-teal-50 text-gf-teal-600")}>{syncStatus}</span>
@@ -2654,7 +2654,7 @@ export default function App(){
               title="Mês anterior" aria-label="Mês anterior" onClick={()=>setMesRef(mesAnterior(mesRef))}>
               <ChevronLeft className="size-4"/>
             </button>
-            <button className="gf-btn min-w-[92px] rounded-lg px-1 py-1.5 text-[13px] font-semibold tracking-wide text-gf-text"
+            <button className="gf-btn min-w-[92px] rounded-lg px-1 py-1.5 text-body font-semibold tracking-wide text-gf-text"
               onClick={()=>setShowMeses(true)} title="Escolher mês">
               {isMobile?mesLabelCurto(mesRef):mesLabel(mesRef)}
             </button>
@@ -2679,7 +2679,7 @@ export default function App(){
         <PainelResponsivo isMobile={isMobile} titulo="Escolher mês" onClose={()=>setShowMeses(false)}>
           <Btn small onClick={()=>{setMesRef(mesAtualKey(ofCartoes));setShowMeses(false);}}
             style={{marginBottom:12,minHeight:44}}>📅 Ir para o mês atual</Btn>
-          {anosComDados.length===0&&<p style={{fontSize:13,color:C.textDim}}>Nenhum mês com dados ainda.</p>}
+          {anosComDados.length===0&&<p style={{fontSize:"var(--fs-body)",color:C.textDim}}>Nenhum mês com dados ainda.</p>}
           {anosComDados.map(ano=>(
             <div key={ano} style={{marginBottom:12}}>
               <SectionLabel>{ano}</SectionLabel>
@@ -2691,7 +2691,7 @@ export default function App(){
                   if(!tem&&!ativo) return null;
                   return(
                     <button key={k} onClick={()=>{setMesRef(k);setShowMeses(false);}} title={nome}
-                      className={cn("gf-btn min-h-[44px] rounded-lg border text-[11px] uppercase",
+                      className={cn("gf-btn min-h-[44px] rounded-lg border text-meta uppercase",
                         ativo
                           ?"border-gf-teal-100 bg-gf-teal-50 font-bold text-gf-teal-600"
                           :"border-gf-border bg-gf-surface-alt font-medium text-gf-text-dim")}>
@@ -2710,12 +2710,12 @@ export default function App(){
       {parcelaMes&&(
         <Modal onClose={()=>setParcelaMes(null)} wide>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
-            <h3 style={{fontSize:15,fontWeight:600,margin:0,color:C.text}}>
+            <h3 style={{fontSize:"var(--fs-lead)",fontWeight:600,margin:0,color:C.text}}>
               Parcelas de {mesLabel(parcelaMes.mesRef)}
             </h3>
             <button onClick={()=>setParcelaMes(null)} style={{background:"none",border:"none",cursor:"pointer",color:C.textMuted,fontSize:20}}>✕</button>
           </div>
-          <p style={{fontSize:12,color:C.textMuted,margin:"0 0 14px"}}>
+          <p style={{fontSize:"var(--fs-small)",color:C.textMuted,margin:"0 0 14px"}}>
             {parcelaMes.qtd} parcela{parcelaMes.qtd===1?"":"s"} · total {fmtBRL(parcelaMes.total)}
             {parcelaMes.projetado>0&&<> · {fmtBRL(parcelaMes.projetado)} ainda projetado</>}
           </p>
@@ -2727,8 +2727,8 @@ export default function App(){
                   <div key={pp.chave+pp.num}
                     className="flex items-start gap-2.5 rounded-xl border border-gf-border-soft bg-gf-surface-alt p-3">
                     <div className="min-w-0 flex-1">
-                      <div className="line-clamp-2 text-[13px] leading-snug font-medium break-words text-gf-text">{pp.nome}</div>
-                      <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-[10px] text-gf-text-muted">
+                      <div className="line-clamp-2 text-body leading-snug font-medium break-words text-gf-text">{pp.nome}</div>
+                      <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-micro text-gf-text-muted">
                         <span>{pp.cartao}</span>
                         <span>·</span>
                         <span className="tabular-nums">
@@ -2739,7 +2739,7 @@ export default function App(){
                         {pp.projetada?<Badge color="info">projetada</Badge>:<Badge color="ok">na fatura</Badge>}
                       </div>
                     </div>
-                    <span className="shrink-0 text-[13px] font-semibold tabular-nums text-gf-text">
+                    <span className="shrink-0 text-body font-semibold tabular-nums text-gf-text">
                       {fmtBRL(pp.valor)}
                     </span>
                   </div>
@@ -2748,7 +2748,7 @@ export default function App(){
             </>
           ):(
           <div style={{overflowX:"auto"}}>
-            <table style={{width:"100%",fontSize:12,borderCollapse:"collapse",minWidth:420}}>
+            <table style={{width:"100%",fontSize:"var(--fs-small)",borderCollapse:"collapse",minWidth:420}}>
               <Thead cols={COLS_PARC_MES} sort={sortParcMes} toggle={toggleParcMes}/>
               <tbody>{ordenarLinhas(parcelaMes.itens,sortParcMes,ACESSORES_PARC_MES).map(p=>(
                 <tr key={p.chave+p.num}>
@@ -2772,19 +2772,19 @@ export default function App(){
       {showCartoes&&(
         <Modal onClose={()=>setShowCartoes(false)}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
-            <h3 style={{fontSize:15,fontWeight:600,margin:0,color:C.text}}>Cartões</h3>
+            <h3 style={{fontSize:"var(--fs-lead)",fontWeight:600,margin:0,color:C.text}}>Cartões</h3>
             <button onClick={()=>setShowCartoes(false)} style={{background:"none",border:"none",cursor:"pointer",color:C.textMuted,fontSize:20}}>✕</button>
           </div>
-          <p style={{fontSize:12,color:C.textMuted,margin:"0 0 14px",lineHeight:1.6}}>
+          <p style={{fontSize:"var(--fs-small)",color:C.textMuted,margin:"0 0 14px",lineHeight:1.6}}>
             Vêm do Open Finance. O apelido é seu e aparece no checklist no lugar do nome do banco.
           </p>
           {ofCartoes.length===0&&<EmptyState icon="💳">Nenhum cartão sincronizado ainda.</EmptyState>}
           {ofCartoes.map(c=>(
             <div key={c.accountId} style={{borderTop:`1px solid ${C.borderSoft}`,padding:"11px 0"}}>
-              <div style={{fontSize:13,color:C.text,fontWeight:500}}>
+              <div style={{fontSize:"var(--fs-body)",color:C.text,fontWeight:500}}>
                 {c.nome}{c.ultimos&&<span style={{color:C.textMuted,fontWeight:400}}> · final {c.ultimos}</span>}
               </div>
-              <div style={{fontSize:11,color:C.textMuted,margin:"3px 0 7px"}}>
+              <div style={{fontSize:"var(--fs-meta)",color:C.textMuted,margin:"3px 0 7px"}}>
                 {c.limite>0&&<>limite {fmtBRL(c.limite)} · </>}
                 {c.fechamento&&<>fecha dia {c.fechamento} · </>}
                 {c.vencimento&&<>vence dia {c.vencimento}</>}
@@ -2805,7 +2805,7 @@ export default function App(){
         <div className="mb-5 hidden gap-1 rounded-xl border border-gf-border-soft bg-gf-surface p-1 md:flex">
           {TABS.map((t,i)=>(
             <button key={t.l} onClick={()=>setTab(i)}
-              className={cn("gf-btn flex flex-1 items-center justify-center gap-1.5 rounded-lg px-1 py-2.5 text-[13px] transition-colors",
+              className={cn("gf-btn flex flex-1 items-center justify-center gap-1.5 rounded-lg px-1 py-2.5 text-body transition-colors",
                 tab===i
                   ?"bg-gf-teal-50 font-bold text-gf-teal-600"
                   :"font-medium text-gf-text-dim")}>
@@ -2837,8 +2837,8 @@ export default function App(){
                 <button key={t.l} onClick={()=>setFaturaTab(i)}
                   className={cn("gf-btn flex min-h-[44px] flex-col items-center justify-center gap-0.5 rounded-lg px-1 leading-none transition-colors",
                     faturaTab===i?"bg-gf-teal-50 text-gf-teal-600":"text-gf-text-dim")}>
-                  <span className={cn("text-[12px]",faturaTab===i?"font-bold":"font-medium")}>{t.l}</span>
-                  <span className="text-[10px] tabular-nums opacity-60">{t.n}</span>
+                  <span className={cn("text-small",faturaTab===i?"font-bold":"font-medium")}>{t.l}</span>
+                  <span className="text-micro tabular-nums opacity-60">{t.n}</span>
                 </button>
               ))}
             </div>
@@ -2883,7 +2883,7 @@ export default function App(){
                   <Btn small onClick={()=>setShowCopy(true)}>📋 Copiar mês anterior</Btn>
                   <Btn active small onClick={addM}>+ Adicionar</Btn>
                 </CabecalhoTela>
-                <p style={{fontSize:12,color:C.textMuted,margin:"0 0 12px",lineHeight:1.6}}>
+                <p style={{fontSize:"var(--fs-small)",color:C.textMuted,margin:"0 0 12px",lineHeight:1.6}}>
                   Para cartões sem conector no Open Finance, ou lançamentos que você queira somar à mão.
                 </p>
                 {showCopy&&<Modal onClose={()=>setShowCopy(false)}><CopyMesModal dadosMes={dadosMes} mesRef={mesRef} onClose={()=>setShowCopy(false)} onImport={handleCopyImport}/></Modal>}
@@ -2926,7 +2926,7 @@ export default function App(){
                         ))}
                       </div>
                     </>
-                  ):<div style={{overflowX:"auto"}}><table style={{width:"100%",fontSize:12,borderCollapse:"collapse",minWidth:540}}>
+                  ):<div style={{overflowX:"auto"}}><table style={{width:"100%",fontSize:"var(--fs-small)",borderCollapse:"collapse",minWidth:540}}>
                     <Thead cols={COLS_MANUAL} sort={sortManual} toggle={toggleManual}/>
                     <tbody>{ordenarLinhas(manual,sortManual,ACESSORES_MANUAL).map(r=>(
                       <tr key={r.id}>
@@ -2997,7 +2997,7 @@ export default function App(){
                     ))}
                   </div>
                 </>
-              ):<div style={{overflowX:"auto"}}><table style={{width:"100%",fontSize:12,borderCollapse:"collapse",minWidth:440}}>
+              ):<div style={{overflowX:"auto"}}><table style={{width:"100%",fontSize:"var(--fs-small)",borderCollapse:"collapse",minWidth:440}}>
                 <Thead cols={COLS_CONTAS} sort={sortContas} toggle={toggleContas}/>
                 <tbody>{ordenarLinhas(contas,sortContas,ACESSORES_CONTAS).map(r=>(
                   <tr key={r.id}>
@@ -3049,7 +3049,7 @@ export default function App(){
                     ))}
                   </div>
                 </>
-              ):<div style={{overflowX:"auto"}}><table style={{width:"100%",fontSize:12,borderCollapse:"collapse",minWidth:440}}>
+              ):<div style={{overflowX:"auto"}}><table style={{width:"100%",fontSize:"var(--fs-small)",borderCollapse:"collapse",minWidth:440}}>
                 <Thead cols={COLS_INVEST} sort={sortInvest} toggle={toggleInvest}/>
                 <tbody>{ordenarLinhas(invest,sortInvest,ACESSORES_INVEST).map(r=>(
                   <tr key={r.id}>
@@ -3164,13 +3164,13 @@ export default function App(){
                 <label className="flex min-h-[48px] flex-1 cursor-pointer items-center gap-2.5 py-2 select-none">
                   <input type="checkbox" checked={isPago} onChange={alternar}
                     className="size-[18px] shrink-0 cursor-pointer" style={{accentColor:C.teal600}}/>
-                  <span className={cn("min-w-0 flex-1 text-[13px] leading-snug",
+                  <span className={cn("min-w-0 flex-1 text-body leading-snug",
                     isPago&&"text-gf-text-muted line-through")}
                     style={isPago?undefined:{color:cor||C.text}}>
                     {label}
-                    {sub&&<span className="ml-1.5 text-[11px] text-gf-text-muted">{sub}</span>}
+                    {sub&&<span className="ml-1.5 text-meta text-gf-text-muted">{sub}</span>}
                   </span>
-                  <span className={cn("shrink-0 text-[13px] font-semibold tabular-nums",
+                  <span className={cn("shrink-0 text-body font-semibold tabular-nums",
                     isPago?"text-gf-text-muted":"text-gf-text")}>{fmtBRL(valor)}</span>
                 </label>
                 {onDetalhe&&(
@@ -3191,18 +3191,18 @@ export default function App(){
               <div style={card}>
                 <div className="mb-3 flex items-center gap-2.5 border-b pb-3"
                   style={{borderColor:acc.border}}>
-                  <div className="grid size-9 shrink-0 place-items-center rounded-full border text-sm font-bold"
+                  <div className="grid size-9 shrink-0 place-items-center rounded-full border text-strong font-bold"
                     style={{background:acc.bg,borderColor:acc.border,color:acc.color}}>
                     {pessoa.charAt(0)}
                   </div>
                   <div className="min-w-0 flex-1">
-                    <div className="text-sm font-semibold text-gf-text">{pessoa}</div>
-                    <div className="text-[11px] text-gf-text-muted">
+                    <div className="text-strong font-semibold text-gf-text">{pessoa}</div>
+                    <div className="text-meta text-gf-text-muted">
                       {pr.pagos} de {pr.total} pagos
                       {pr.falta>0.005&&<> · falta {fmtBRL(pr.falta)}</>}
                     </div>
                   </div>
-                  <div className="shrink-0 text-base font-bold tabular-nums" style={{color:acc.color}}>
+                  <div className="shrink-0 text-lead font-bold tabular-nums" style={{color:acc.color}}>
                     {pr.pct}%
                   </div>
                 </div>
@@ -3234,7 +3234,7 @@ export default function App(){
 
                 {secs.length===0&&<EmptyState icon="✅">Nada a pagar para {pessoa} neste mês.</EmptyState>}
                 {secs.length>0&&pr.total===pr.pagos&&(
-                  <div className="mt-3 rounded-lg border border-gf-green-600/25 bg-gf-green-600/8 px-3 py-2 text-center text-[12px] font-semibold text-gf-green-600">
+                  <div className="mt-3 rounded-lg border border-gf-green-600/25 bg-gf-green-600/8 px-3 py-2 text-center text-small font-semibold text-gf-green-600">
                     🎉 Tudo pago
                   </div>
                 )}
@@ -3258,14 +3258,14 @@ export default function App(){
                         :" · valor cheio do lançamento")}>
                     {linhas.length===0&&<EmptyState icon="🔍">Nada aqui neste mês.</EmptyState>}
                     {linhas.map(r=>(
-                      <div key={r.id} className="flex justify-between gap-2.5 border-t border-gf-border-soft py-2 text-[13px]">
+                      <div key={r.id} className="flex justify-between gap-2.5 border-t border-gf-border-soft py-2 text-body">
                         <span className="min-w-0 flex-1 text-gf-text">
                           {r.nome||r.transacao||r.descricao}
                           {r.parcela?" "+r.parcela:""}
                           {r.obs&&<span className="ml-1.5 text-gf-text-muted">— {r.obs}</span>}
                           {/* Sem pessoa fixada, quem paga é informação que falta. */}
                           {!modal.pessoa&&r.dono&&(
-                            <span className="ml-1.5 text-[11px] text-gf-text-muted">
+                            <span className="ml-1.5 text-meta text-gf-text-muted">
                               · {rotuloDono(r.dono)}
                             </span>
                           )}
@@ -3274,7 +3274,7 @@ export default function App(){
                       </div>
                     ))}
                     {linhas.length>0&&(
-                      <div className="mt-1.5 flex justify-between border-t-2 border-gf-teal-100 pt-2.5 text-[13px] font-bold text-gf-teal-600">
+                      <div className="mt-1.5 flex justify-between border-t-2 border-gf-teal-100 pt-2.5 text-body font-bold text-gf-teal-600">
                         <span>Total</span>
                         <span className="tabular-nums">
                           {fmtBRL(linhas.reduce((a,r)=>a+parte(r),0))}
@@ -3294,12 +3294,12 @@ export default function App(){
                 sobra>=0
                   ?"border-gf-green-600/25 bg-gf-green-600/8"
                   :"border-gf-red-600/25 bg-gf-red-600/8")}>
-                <div className="text-[10px] font-bold tracking-[0.07em] text-gf-text-muted uppercase">
+                <div className="text-micro font-bold tracking-[0.07em] text-gf-text-muted uppercase">
                   Sobra prevista · {mesLabel(mesRef)}
                 </div>
-                <div className={cn("mt-1 text-[30px] leading-none font-bold tracking-tight tabular-nums md:text-4xl",
+                <div className={cn("mt-1 text-hero leading-none font-bold tracking-tight tabular-nums md:text-hero",
                   sobra>=0?"text-gf-green-600":"text-gf-red-600")}>{fmtBRL(sobra)}</div>
-                <div className="mt-1.5 text-[11px] leading-snug text-gf-text-dim">
+                <div className="mt-1.5 text-meta leading-snug text-gf-text-dim">
                   {renda.total>0
                     ?<>{pctComp}% da renda comprometida com contas, cartão e investimento</>
                     :<>sem renda lançada neste mês</>}
@@ -3311,7 +3311,7 @@ export default function App(){
                   <div className="bg-gf-blue-600" style={{width:fatia(investimentos.total)+"%"}}/>
                   <div className="bg-gf-green-600" style={{width:fatia(Math.max(0,sobra))+"%"}}/>
                 </div>
-                <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-gf-text-muted">
+                <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-micro text-gf-text-muted">
                   {[["bg-gf-red-600","Despesas"],["bg-gf-blue-600","Investido"],["bg-gf-green-600","Sobra"]].map(([bg,rot])=>(
                     <span key={rot} className="flex items-center gap-1">
                       <span className={cn("inline-block size-2 rounded-full",bg)}/>{rot}
@@ -3330,8 +3330,8 @@ export default function App(){
                   ].map(c=>(
                     <button key={c.rot} onClick={c.go}
                       className="gf-btn min-h-[46px] rounded-lg px-1 py-1 text-left">
-                      <div className="text-[10px] text-gf-text-muted">{c.rot} ›</div>
-                      <div className={cn("truncate text-[13px] font-bold tabular-nums",c.cls)}>
+                      <div className="text-micro text-gf-text-muted">{c.rot} ›</div>
+                      <div className={cn("truncate text-body font-bold tabular-nums",c.cls)}>
                         {fmtBRL(c.v)}
                       </div>
                     </button>
@@ -3360,7 +3360,7 @@ export default function App(){
                       {/* Saldo: a única linha que muda ao marcar pago, e o
                           número que se olha no fim do mês. Clicar mostra o que
                           já foi pago, que é o que o derruba. */}
-                      <button className="gf-btn mt-2 flex w-full items-center justify-between gap-2 rounded border-t pt-2 text-left text-[12px] font-bold"
+                      <button className="gf-btn mt-2 flex w-full items-center justify-between gap-2 rounded border-t pt-2 text-left text-small font-bold"
                         style={{borderColor:cor+"33",color:sld>=0?C.green600:C.red600}}
                         onClick={()=>abrir("Já pago — "+pessoa,pagosDe(pessoa),pessoa)}>
                         <span className="truncate">Na mão <span className="opacity-55">›</span></span>
@@ -3378,7 +3378,7 @@ export default function App(){
                   return(
                     <MetricCard key={nome} label={nome} value={fmtBRL(total)} accent="blue" icon="💳">
                       <div className="mt-2.5 mb-1"><ProgressBar pct={pct} color={C.blue600}/></div>
-                      <div className="text-[10px] text-gf-blue-600 opacity-70">{pct}% pago</div>
+                      <div className="text-micro text-gf-blue-600 opacity-70">{pct}% pago</div>
                       <DetalheCard cor={C.blue600} linhas={[
                         {rot:"Fixos",valor:somar(fixos),onClick:()=>abrir(nome+" — Fixos",fixos)},
                         {rot:"Parcelados",valor:somar(parcelados),onClick:()=>abrir(nome+" — Parcelados",parcelados)},
@@ -3411,11 +3411,11 @@ export default function App(){
               {semDono.length>0&&(
                 <button className="gf-btn mb-3 w-full rounded-xl border border-gf-amber-600/30 bg-gf-amber-600/10 p-3.5 text-left"
                   onClick={()=>{setTab(0);setFaturaTab(1);}}>
-                  <div className="text-[13px] font-semibold text-gf-amber-600">
+                  <div className="text-body font-semibold text-gf-amber-600">
                     ⚠️ {semDono.length} lançamento{semDono.length===1?"":"s"} sem dono ·{" "}
                     {fmtBRL(valorSemDono)} fora da conta
                   </div>
-                  <div className="mt-1 text-[12px] leading-snug text-gf-amber-600 opacity-80">
+                  <div className="mt-1 text-small leading-snug text-gf-amber-600 opacity-80">
                     Sem dono não dá para saber quem paga, então nada disso entra
                     nos totais acima. Toque para classificar na Fatura.
                   </div>
@@ -3423,7 +3423,7 @@ export default function App(){
               )}
 
               {checklistEmAberto&&(
-                <div className="mb-3 rounded-xl border border-gf-amber-600/30 bg-gf-amber-600/10 px-3.5 py-3 text-[12px] leading-snug text-gf-amber-600">
+                <div className="mb-3 rounded-xl border border-gf-amber-600/30 bg-gf-amber-600/10 px-3.5 py-3 text-small leading-snug text-gf-amber-600">
                   🔴 <strong>A fatura de {mesLabel(mesRef)} ainda não fechou.</strong>{" "}
                   O cartão abaixo usa a fatura em aberto, então os valores podem
                   mudar até o fechamento. Marcar como pago já funciona.
@@ -3432,11 +3432,11 @@ export default function App(){
 
               {/* ── Checklist de pagamento ─────────────────────────────────── */}
               <div className="mb-2 flex items-center justify-between gap-2">
-                <span className="text-[10px] font-bold tracking-[0.08em] text-gf-text-muted uppercase">
+                <span className="text-micro font-bold tracking-[0.08em] text-gf-text-muted uppercase">
                   Checklist de pagamento
                 </span>
                 <button onClick={()=>setSoPendentes(v=>!v)} aria-pressed={soPendentes}
-                  className={cn("gf-btn shrink-0 rounded-full border px-3 py-1.5 text-[11px]",
+                  className={cn("gf-btn shrink-0 rounded-full border px-3 py-1.5 text-meta",
                     soPendentes
                       ?"border-gf-teal-100 bg-gf-teal-50 font-semibold text-gf-teal-600"
                       :"border-gf-border font-medium text-gf-text-muted")}>
@@ -3457,8 +3457,8 @@ export default function App(){
                       <button key={pp} onClick={()=>setChecklistPessoa(pp)}
                         className="gf-btn flex min-h-[48px] flex-col items-center justify-center gap-0.5 rounded-lg leading-none"
                         style={ativo?{background:acc.bg,color:acc.color}:{color:C.textDim}}>
-                        <span className={cn("text-[13px]",ativo?"font-bold":"font-medium")}>{pp}</span>
-                        <span className="text-[10px] tabular-nums opacity-70">
+                        <span className={cn("text-body",ativo?"font-bold":"font-medium")}>{pp}</span>
+                        <span className="text-micro tabular-nums opacity-70">
                           {pr.pagos}/{pr.total} pagos
                         </span>
                       </button>
@@ -3482,7 +3482,7 @@ export default function App(){
                   const acc=pessoa==="Caulin"?ACCENTS.teal:ACCENTS.purple;
                   return(
                     <button key={pessoa}
-                      className="gf-btn flex min-h-[48px] w-full items-center justify-center gap-2 rounded-xl border text-[14px] font-bold"
+                      className="gf-btn flex min-h-[48px] w-full items-center justify-center gap-2 rounded-xl border text-strong font-bold"
                       style={eu
                         ?{borderColor:C.green100,background:C.green50,color:C.green600}
                         :{borderColor:acc.border,background:acc.bg,color:acc.color}}
