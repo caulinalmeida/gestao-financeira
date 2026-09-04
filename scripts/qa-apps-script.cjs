@@ -187,6 +187,41 @@ eq('ignora billClosingDate inválido',
 ok('conta sem fechamento não quebra a derivação do mês',
    sandbox._derivarMes({ date: '2026-08-20T00:00:00Z', creditCardMetadata: {} }, {}, null).mes === '2026-08');
 
+// ── 5d. O dia de fechamento move meses inteiros ─────────────────────────────
+// Ele é DERIVADO do billClosingDate das faturas, não configurado. Se o valor
+// derivado muda, compras migram de aba sem que nada mais no código tenha
+// mudado — e o sintoma é uma fronteira limpa numa data. Estes testes fixam a
+// relação para o efeito ser reconhecível quando aparecer.
+console.log('');
+console.log('=== 5d. sensibilidade ao dia de fechamento ===');
+{
+  const ciclo = (dia, fech) =>
+    sandbox._mesPorCiclo('2026-08-' + String(dia).padStart(2, '0') + 'T12:00:00Z', fech, 10);
+
+  // Com fechamento 3 (o do Itaú), a fatura de setembro começa em 03/08.
+  eq('fech=3: compra 02/08 fica em agosto', ciclo(2, 3), '2026-08');
+  eq('fech=3: compra 05/08 vai para setembro', ciclo(5, 3), '2026-09');
+  eq('fech=3: compra 20/08 vai para setembro', ciclo(20, 3), '2026-09');
+
+  // Com fechamento 10, a MESMA compra de 05/08 cai em agosto. É exatamente o
+  // sintoma "some tudo que é anterior ao dia 10": não é perda de dado, é a
+  // fronteira do ciclo tendo mudado de lugar.
+  eq('fech=10: compra 05/08 cai em AGOSTO', ciclo(5, 10), '2026-08');
+  eq('fech=10: compra 20/08 continua em setembro', ciclo(20, 10), '2026-09');
+  ok('trocar o fechamento de 3 para 10 move a compra do dia 5 de mês',
+     ciclo(5, 3) !== ciclo(5, 10));
+  ok('e NÃO move a compra do dia 20 — por isso o corte parece seletivo',
+     ciclo(20, 3) === ciclo(20, 10));
+
+  // Sem fechamento a regra CICLO é pulada inteira e cai em FORECAST, que usa
+  // outra convenção de mês. Silencioso: nada indica que a regra mudou.
+  const semFech = sandbox._derivarMes(
+    { date: '2026-08-05T12:00:00Z', creditCardMetadata: { billForecastDate: '2026-07' } },
+    {}, null, 10);
+  eq('sem dia de fechamento, a regra vira FORECAST', semFech.origem, 'FORECAST');
+  eq('e o FORECAST pode discordar do ciclo', semFech.mes, '2026-07');
+}
+
 // ── 6. Mapeamento da transação ───────────────────────────────────────────────
 console.log('\n=== 6. _mapearTransacao ===');
 const tx = {
