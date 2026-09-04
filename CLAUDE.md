@@ -127,6 +127,8 @@ Precedência, verificada contra dados reais do Itaú (fecha dia 3, vence dia 10)
 
 `OF_FATURAS` guarda o total oficial da fatura segundo o banco. O app compara com o nosso total e mostra ✅ ou ⚠️ por cartão/mês. Sem isso, uma lacuna de dados do Pluggy viraria total errado em silêncio — e isso já aconteceu: em meses antigos o backfill do Pluggy entrega menos transações do que o total da própria fatura que ele reporta.
 
+> **A conciliação tinha um ponto cego, e ele era o pior possível.** Ela descarta o cartão quando não existe fatura do banco para aquele mês (`.filter(c => c.banco !== null)`) — ou seja, no exato momento em que o dado do banco falta, o aviso some da tela. Em setembro/2026 a fatura fechou dia 03, o Pluggy não a materializou, e o app exibiu um total parcial **sem nenhum sinal**. `faturasPendentesDoBanco()` fecha isso: se o dia de fechamento daquele mês já passou e a fatura não chegou, a barra do Open Finance avisa que o total está incompleto. Antes do fechamento não avisa — faltar fatura ali é normal, e ruído mensal vira aviso que ninguém lê.
+
 ### "Atualizar agora" sem endpoint público
 
 O app grava `pedido_sync = <timestamp>` em `OF_STATUS`; um gatilho de 5 min do Apps Script vê e dispara o sync. Evita Web App exposto, CORS e shared secret vazando no bundle público. Latência de até 5 minutos, sinalizada na UI.

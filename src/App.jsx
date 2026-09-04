@@ -103,6 +103,32 @@ function mesAtualKey(cartoes){
   return mesKey(ano,mes);
 }
 
+/**
+ * Faturas que o banco já fechou mas o Open Finance ainda não entregou.
+ *
+ * A conciliação só compara quando existe fatura do banco em OF_FATURAS, e
+ * descarta o cartão quando ela falta. O efeito é perverso: no momento em que o
+ * dado do banco some é justamente quando o aviso deixa de aparecer. Foi assim
+ * que uma fatura de setembro incompleta passou por completa — sem fatura do
+ * banco não havia o que divergir, então a tela ficou muda.
+ *
+ * Aqui o silêncio vira aviso: se o dia de fechamento daquele mês já passou e a
+ * fatura não chegou, o total exibido é parcial por definição.
+ */
+function faturasPendentesDoBanco(mesRef,cartoes,faturas,hoje){
+  const{ano,mesIdx}=mesPartes(mesRef);
+  if(isNaN(ano)||isNaN(mesIdx)) return[];
+  const hj=hoje||new Date();
+  return(cartoes||[]).filter(c=>{
+    const dia=parseInt(c.fechamento,10);
+    // Sem ciclo conhecido não dá para saber se já fechou — melhor calar do que
+    // acusar falta que talvez não exista.
+    if(!(dia>=1&&dia<=31)) return false;
+    if(hj<new Date(ano,mesIdx,dia)) return false;   // ainda não fechou: normal faltar
+    return!(faturas||[]).some(f=>f.accountId===c.accountId&&f.mesRef===mesRef);
+  });
+}
+
 // ── Google Auth ───────────────────────────────────────────────────────────────
 let tokenClient = null;
 
@@ -800,7 +826,7 @@ function horasDesde(iso){
 const linkMeuPluggy=itemId=>`https://meu.pluggy.ai/connections/${itemId}`;
 
 /** Faixa de status do Open Finance: frescor do dado e conciliação com o banco. */
-function BarraOpenFinance({temOF,ultimoSync,pluggyEm,erroSync,conciliacao,conexoes,pedindoSync,onAtualizar,onCartoes,isMobile}){
+function BarraOpenFinance({temOF,ultimoSync,pluggyEm,erroSync,conciliacao,faturasPendentes=[],conexoes,pedindoSync,onAtualizar,onCartoes,isMobile}){
   if(!temOF) return(
     <div style={{...card,borderColor:C.amber100,background:C.amberSoft}}>
       <div style={{fontSize:13,color:C.amber600,fontWeight:600,marginBottom:4}}>Open Finance não configurado</div>
@@ -871,6 +897,20 @@ function BarraOpenFinance({temOF,ultimoSync,pluggyEm,erroSync,conciliacao,conexo
           <div style={{marginTop:8,opacity:0.85}}>
             Lá tem o botão <strong>Atualizar</strong>: não pede senha, coleta
             sozinho em cerca de 1 min. Depois volte aqui e clique em 🔄.
+          </div>
+        </div>
+      )}
+
+      {faturasPendentes.length>0&&(
+        <div style={{marginTop:10,fontSize:12,color:C.amber600,background:C.amber50,border:`1px solid ${C.amber100}`,padding:"8px 10px",borderRadius:8,lineHeight:1.7}}>
+          <strong>A fatura já fechou no banco, mas ainda não chegou pelo Open Finance</strong>
+          <div style={{color:C.textDim}}>
+            {faturasPendentes.map(c=>c.nome).join(" · ")}
+          </div>
+          <div style={{color:C.textMuted,fontSize:11,marginTop:4}}>
+            O total abaixo está <strong>incompleto</strong>: faltam as compras que só
+            aparecem quando o Pluggy entrega a fatura fechada. Confira o valor na
+            fatura do banco antes de fechar o mês.
           </div>
         </div>
       )}
@@ -1860,6 +1900,12 @@ export default function App(){
     };
   }).filter(c=>c.banco!==null);
 
+  // O outro lado da conciliação: cartão cuja fatura do mês JÁ FECHOU no banco
+  // e ainda não chegou. A lista acima descarta esses casos, então sem isto a
+  // ausência do dado não produz sinal nenhum.
+  const faturasPendentes=faturasPendentesDoBanco(mesRef,cartoesDoMes,ofFaturas)
+    .map(c=>({accountId:c.accountId,nome:nomeCartao(c.accountId,ofCartoes,ajustes)}));
+
   // Uma conexão (item do Pluggy) pode ter vários cartões. Para o link de
   // atualização, o que importa é o item — agrupa pelo primeiro cartão de cada.
   const conexoes=[...new Map(ofCartoes.filter(c=>c.itemId)
@@ -2231,7 +2277,7 @@ export default function App(){
             <BarraOpenFinance
               temOF={temOF} ultimoSync={ultimoSync} pluggyEm={pluggyEm} erroSync={erroSync}
               conexoes={conexoes}
-              conciliacao={conciliacao} pedindoSync={pedindoSync}
+              conciliacao={conciliacao} faturasPendentes={faturasPendentes} pedindoSync={pedindoSync}
               onAtualizar={pedirSync} onCartoes={()=>setShowCartoes(true)}
               isMobile={isMobile}/>
 

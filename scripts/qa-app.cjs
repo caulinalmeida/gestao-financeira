@@ -51,6 +51,7 @@ const alvos = [
   'function terceirosDe(', 'function chavePago(', 'function chaveGrupo(',
   'function cmpValor(', 'function ordenarLinhas(', 'function chaveData(',
   'function diaDoCartao(', 'function mesAtualKey(',
+  'function faturasPendentesDoBanco(',
 ];
 const pedacos = [];
 let faltou = [];
@@ -735,6 +736,55 @@ console.log('=== 15. diaDoCartao / mesAtualKey ===');
   ok('entre o fechamento e o vencimento, o app fica na fatura a pagar',
      dia < 3 || dia > 10 ||
      ctx.mesAtualKey([{ fechamento: '3', vencimento: '10' }]) === mesCal);
+}
+
+// ── 16. Fatura fechada no banco que o Pluggy ainda não entregou ──────────────
+// O caso real: a conciliação descarta cartão sem fatura do banco, então
+// exatamente quando o dado some é que o aviso deixa de aparecer. Uma fatura de
+// setembro incompleta passou por completa por causa disso.
+console.log('');
+console.log('=== 16. faturasPendentesDoBanco ===');
+{
+  const FP = ctx.faturasPendentesDoBanco;
+  const black = { accountId: 'acc-1', fechamento: '3' };
+  const plat = { accountId: 'acc-2', fechamento: '3' };
+  const nomes = xs => xs.map(c => c.accountId);
+
+  // Setembro fecha 03/09. Em 04/09 já fechou e a fatura não veio -> avisa.
+  eq('fechou ontem e a fatura não veio: avisa',
+     nomes(FP('2026-09', [black], [], new Date(2026, 8, 4))), ['acc-1']);
+  eq('avisa para cada cartão sem fatura',
+     nomes(FP('2026-09', [black, plat], [], new Date(2026, 8, 4))), ['acc-1', 'acc-2']);
+  eq('fatura presente: nada a avisar',
+     nomes(FP('2026-09', [black],
+              [{ accountId: 'acc-1', mesRef: '2026-09' }], new Date(2026, 8, 4))), []);
+  eq('avisa só do cartão que falta',
+     nomes(FP('2026-09', [black, plat],
+              [{ accountId: 'acc-1', mesRef: '2026-09' }], new Date(2026, 8, 4))), ['acc-2']);
+
+  // Antes do fechamento é NORMAL não ter fatura — avisar aqui seria ruído
+  // mensal, e ruído mensal é aviso que ninguém mais lê.
+  eq('antes do fechamento não avisa',
+     nomes(FP('2026-09', [black], [], new Date(2026, 8, 2))), []);
+  eq('no dia exato do fechamento já avisa',
+     nomes(FP('2026-09', [black], [], new Date(2026, 8, 3))), ['acc-1']);
+
+  // Fatura de outro mês não serve de prova para este.
+  eq('fatura de outro mês não conta',
+     nomes(FP('2026-09', [black],
+              [{ accountId: 'acc-1', mesRef: '2026-08' }], new Date(2026, 8, 4))), ['acc-1']);
+
+  // Sem ciclo conhecido, calar. Foi o "1900-01-02" que ensinou: valor sujo não
+  // pode virar acusação de fatura faltando.
+  eq('sem dia de fechamento não opina',
+     nomes(FP('2026-09', [{ accountId: 'acc-3', fechamento: '' }], [], new Date(2026, 8, 4))), []);
+  eq('fechamento inválido não opina',
+     nomes(FP('2026-09', [{ accountId: 'acc-3', fechamento: '1900-01-02' }], [],
+              new Date(2026, 8, 4))), []);
+
+  eq('sem cartões devolve vazio', nomes(FP('2026-09', [], [], new Date(2026, 8, 4))), []);
+  eq('mesRef inválido é seguro', nomes(FP('lixo', [black], [], new Date(2026, 8, 4))), []);
+  eq('undefined é seguro', nomes(FP('2026-09', undefined, undefined, new Date(2026, 8, 4))), []);
 }
 
 console.log('\n' + '='.repeat(52));
