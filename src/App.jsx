@@ -1,4 +1,8 @@
 import { useState, useRef, useCallback, useEffect, useSyncExternalStore } from "react";
+import { CreditCard, CalendarDays, Receipt, TrendingUp, CircleCheckBig,
+         Settings, ChevronLeft, ChevronRight, X } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
 
 const CLIENT_ID = "551652083809-p6o9ch2bvn8ipg508b7nu2afu5fn1ho1.apps.googleusercontent.com";
 const SHEET_ID  = "19qO91TbQQJMLd_ONeP--Gdh7NwliuYuYQ-GuA-PNen8";
@@ -662,6 +666,90 @@ function useSort(){
  * Cabeçalho de tabela ordenável. Cada item de `cols` é o rótulo (que também é a
  * chave no mapa de acessores) ou "" para a coluna de ações, que não ordena.
  */
+/**
+ * Navegacao principal no mobile, fixada embaixo.
+ *
+ * A barra de abas no topo obrigava a esticar o polegar ate' o alto da tela, e
+ * com 6 abas em 390px cada alvo ficava com ~36px de altura — abaixo dos 44px
+ * que iOS e Android recomendam. Aqui cada item tem 56px e rotulo visivel, em
+ * vez do emoji solto e sem legenda que o mobile mostrava antes.
+ *
+ * Recebe as abas ja' fatiadas (`TABS_MOBILE`) com o indice original em `idx`,
+ * para `onTab` continuar falando o mesmo indice que o `tab` do App usa.
+ */
+function BottomNav({tabs,tab,onTab}){
+  return(
+    <nav aria-label="Navegacao principal"
+      className="fixed inset-x-0 bottom-0 z-40 border-t border-gf-border-soft bg-gf-surface/95 backdrop-blur-md md:hidden"
+      style={{paddingBottom:"env(safe-area-inset-bottom)"}}>
+      <div className="mx-auto grid max-w-lg grid-cols-5">
+        {tabs.map(t=>{
+          const ativo=tab===t.idx;
+          return(
+            <button key={t.l} onClick={()=>onTab(t.idx)} title={t.l}
+              aria-current={ativo?"page":undefined}
+              className={cn("flex min-h-[56px] flex-col items-center justify-center gap-1 text-[10px] transition-colors",
+                ativo?"font-semibold text-gf-teal-600":"font-medium text-gf-text-muted active:text-gf-text-dim")}>
+              <t.Icon className="size-[19px]" strokeWidth={ativo?2.4:1.7}/>
+              <span className="leading-none">{t.curto}</span>
+            </button>
+          );
+        })}
+      </div>
+    </nav>
+  );
+}
+
+/**
+ * Um painel que e' gaveta de baixo no mobile e modal centrado no desktop.
+ *
+ * Modal centrado no celular nasce longe do polegar e some atras do teclado
+ * quando ha' campo de texto. A gaveta sobe do rodape', fecha arrastando e
+ * respeita a safe area. No desktop a gaveta seria estranha, entao la' continua
+ * o `Modal` de sempre — mesmo conteudo, dois enquadramentos.
+ */
+function PainelResponsivo({isMobile,onClose,titulo,descricao,children,wide}){
+  if(isMobile){
+    return(
+      <Sheet open onOpenChange={aberto=>{ if(!aberto) onClose(); }}>
+        {/* showCloseButton={false}: o X padrao do shadcn tem 16px de alvo, que e'
+            justamente o tipo de alvo pequeno que este redesenho veio corrigir.
+            O de baixo tem 40px. */}
+        <SheetContent side="bottom" showCloseButton={false}
+          className="max-h-[88vh] gap-0 rounded-t-2xl border-gf-border bg-gf-surface p-0">
+          <SheetHeader className="flex-row items-start justify-between gap-2 space-y-0 px-4 pt-4 pb-2 text-left">
+            <div className="min-w-0">
+              <SheetTitle className="text-[15px] font-semibold text-gf-text">{titulo}</SheetTitle>
+              {/* Radix exige descricao acessivel; sem texto, fica so' para leitor de tela. */}
+              <SheetDescription className={descricao?"mt-1 text-xs leading-relaxed text-gf-text-muted":"sr-only"}>
+                {descricao||titulo}
+              </SheetDescription>
+            </div>
+            <button onClick={onClose} aria-label="Fechar"
+              className="gf-btn -mr-1 grid size-10 shrink-0 place-items-center rounded-lg text-gf-text-muted">
+              <X className="size-5"/>
+            </button>
+          </SheetHeader>
+          <div className="min-h-0 overflow-y-auto px-4 pb-[calc(env(safe-area-inset-bottom)+20px)]">
+            {children}
+          </div>
+        </SheetContent>
+      </Sheet>
+    );
+  }
+  return(
+    <Modal onClose={onClose} wide={wide}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:descricao?6:14}}>
+        <h3 style={{fontSize:15,fontWeight:600,margin:0,color:C.text}}>{titulo}</h3>
+        <button onClick={onClose} aria-label="Fechar"
+          style={{background:"none",border:"none",cursor:"pointer",color:C.textMuted,fontSize:20}}>✕</button>
+      </div>
+      {descricao&&<p style={{fontSize:12,color:C.textMuted,margin:"0 0 14px",lineHeight:1.6}}>{descricao}</p>}
+      {children}
+    </Modal>
+  );
+}
+
 function Thead({cols,sort,toggle}){
   return(
     <thead><tr style={{background:C.surfaceAlt}}>
@@ -1603,7 +1691,10 @@ export default function App(){
   const [syncStatus,setSyncStatus]=useState("");
   const syncTimer=useRef(null);
   const ajusteTimer=useRef(null);
-  const isMobile=useMediaQuery("(max-width: 720px)");
+  // Tem que ser o complemento exato do breakpoint `md` do Tailwind (min-width:768px),
+  // senao a faixa entre os dois discorda: o CSS ja' esta' em modo mobile e o JS
+  // ainda acha que e' desktop. O .98 e' para nao abrir buraco em tela fracionaria.
+  const isMobile=useMediaQuery("(max-width: 767.98px)");
 
   // ── State helpers ─────────────────────────────────────────────────────────
   const getMes=useCallback(m=>dadosMes[m]||{fatura:[],manual:[],contas:[],investimentos:[]},[dadosMes]);
@@ -2117,8 +2208,20 @@ export default function App(){
   const mesesComDados=Object.keys(dadosMes);
   // Anos que têm dados + o ano do mês selecionado, para o seletor sempre poder voltar.
   const anosComDados=[...new Set([...mesesComDados.map(k=>mesPartes(k).ano),mesPartes(mesRef).ano])].filter(a=>!isNaN(a)).sort((a,b)=>b-a);
-  const TABS=[{l:"Fatura",i:"💳"},{l:"Parcelas",i:"📅"},{l:"Contas",i:"🏠"},
-    {l:"Investimentos",i:"📈"},{l:"Checklist",i:"✅"},{l:"Config",i:"⚙️"}];
+  // `curto` e' o rotulo da barra inferior no mobile, onde cabem ~72px por item.
+  // Os emojis viraram icones de traço: em nav, emoji renderiza diferente em cada
+  // sistema (e colorido demais) e era o que mais deixava o app com cara amadora.
+  const TABS=[
+    {l:"Fatura",        curto:"Fatura",   Icon:CreditCard},
+    {l:"Parcelas",      curto:"Parcelas", Icon:CalendarDays},
+    {l:"Contas",        curto:"Contas",   Icon:Receipt},
+    {l:"Investimentos", curto:"Invest.",  Icon:TrendingUp},
+    {l:"Checklist",     curto:"Checklist",Icon:CircleCheckBig},
+    {l:"Config",        curto:"Ajustes",  Icon:Settings},
+  ];
+  // A barra inferior leva as 5 abas do dia a dia. Config nao cabe (6 alvos em
+  // 390px da' 65px cada) e vira engrenagem na topbar.
+  const TABS_MOBILE=TABS.slice(0,5).map((t,i)=>({...t,idx:i}));
 
   // Quantas transações carregadas casam com cada padrão do dicionário — mostra
   // na aba Config quais padrões estão pegando de fato.
@@ -2155,61 +2258,72 @@ export default function App(){
     <div style={{minHeight:"100vh",background:C.bg,fontFamily:"system-ui,sans-serif",color:C.text}}>
 
       {/* Topbar */}
-      <div style={{background:C.surface,borderBottom:`1px solid ${C.border}`,padding:isMobile?"0 14px":"0 24px",display:"flex",alignItems:"center",justifyContent:"space-between",height:58,position:"sticky",top:0,zIndex:100}}>
-        <div style={{display:"flex",alignItems:"center",gap:10,minWidth:0}}>
-          <span style={{fontSize:19}}>📊</span>
-          {!isMobile&&(
-            <div style={{lineHeight:1.25}}>
-              <div style={{fontSize:14,fontWeight:600,color:C.text}}>Gestão Financeira</div>
-              <div style={{fontSize:11,color:C.textMuted}}>Caulin &amp; Luanna</div>
-            </div>
-          )}
+      <header className="sticky top-0 z-40 flex h-14 items-center justify-between gap-2 border-b border-gf-border bg-gf-surface/95 px-3 backdrop-blur-md md:h-[58px] md:px-6">
+        <div className="flex min-w-0 items-center gap-2.5">
+          <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-gf-teal-50 text-base">📊</span>
+          {/* O titulo some no mobile: em 390px ele empurrava o seletor de mes. */}
+          <div className="hidden leading-tight md:block">
+            <div className="text-sm font-semibold text-gf-text">Gestão Financeira</div>
+            <div className="text-[11px] text-gf-text-muted">Caulin &amp; Luanna</div>
+          </div>
           {syncStatus&&(
-            // syncFalhou cobre "erro ao..." e as mensagens com ⚠️. Antes olhava só
+            // syncFalhou cobre "erro ao..." e as mensagens com ⚠️. Antes olhava so'
             // o prefixo "erro" e uma falha de gravação aparecia em verde.
-            <span style={{fontSize:11,padding:"3px 10px",borderRadius:20,whiteSpace:"nowrap",
-              background:syncFalhou?C.red50:C.tealSoft,
-              border:`1px solid ${syncFalhou?C.red100:C.teal100}`,
-              color:syncFalhou?C.red600:C.teal600}}>{syncStatus}</span>
+            <span className={cn("truncate rounded-full border px-2.5 py-[3px] text-[11px]",
+              syncFalhou
+                ?"border-gf-red-100 bg-gf-red-50 text-gf-red-600"
+                :"border-gf-teal-100 bg-gf-teal-50 text-gf-teal-600")}>{syncStatus}</span>
           )}
         </div>
 
-        {/* Seletor de mês: setas + rótulo clicável (substitui as 12 pílulas fixas) */}
-        <div style={{display:"flex",alignItems:"center",gap:2,background:C.surfaceAlt,border:`1px solid ${C.border}`,borderRadius:10,padding:2}}>
-          <button className="gf-btn" title="Mês anterior" onClick={()=>setMesRef(mesAnterior(mesRef))}
-            style={{background:"none",border:"none",color:C.textDim,cursor:"pointer",fontSize:16,padding:"2px 9px",borderRadius:8,lineHeight:1}}>‹</button>
-          <button className="gf-btn" onClick={()=>setShowMeses(true)} title="Escolher mês"
-            style={{background:"none",border:"none",color:C.text,cursor:"pointer",fontSize:13,fontWeight:600,padding:"4px 8px",borderRadius:8,minWidth:96,letterSpacing:"0.02em"}}>
-            {isMobile?mesLabelCurto(mesRef):mesLabel(mesRef)}
+        <div className="flex shrink-0 items-center gap-1.5">
+          {/* Seletor de mês: setas + rótulo clicável (substitui as 12 pílulas fixas) */}
+          <div className="flex items-center rounded-xl border border-gf-border bg-gf-surface-alt p-0.5">
+            <button className="gf-btn grid size-8 place-items-center rounded-lg text-gf-text-dim"
+              title="Mês anterior" aria-label="Mês anterior" onClick={()=>setMesRef(mesAnterior(mesRef))}>
+              <ChevronLeft className="size-4"/>
+            </button>
+            <button className="gf-btn min-w-[92px] rounded-lg px-1 py-1.5 text-[13px] font-semibold tracking-wide text-gf-text"
+              onClick={()=>setShowMeses(true)} title="Escolher mês">
+              {isMobile?mesLabelCurto(mesRef):mesLabel(mesRef)}
+            </button>
+            <button className="gf-btn grid size-8 place-items-center rounded-lg text-gf-text-dim"
+              title="Próximo mês" aria-label="Próximo mês" onClick={()=>setMesRef(mesProximo(mesRef))}>
+              <ChevronRight className="size-4"/>
+            </button>
+          </div>
+
+          {/* Config sai da barra inferior (nao cabia a 6ª aba) e vira engrenagem. */}
+          <button onClick={()=>setTab(5)} title="Configurações" aria-label="Configurações"
+            className={cn("gf-btn grid size-9 shrink-0 place-items-center rounded-xl border md:hidden",
+              tab===5
+                ?"border-gf-teal-100 bg-gf-teal-50 text-gf-teal-600"
+                :"border-gf-border bg-gf-surface-alt text-gf-text-dim")}>
+            <Settings className="size-[18px]"/>
           </button>
-          <button className="gf-btn" title="Próximo mês" onClick={()=>setMesRef(mesProximo(mesRef))}
-            style={{background:"none",border:"none",color:C.textDim,cursor:"pointer",fontSize:16,padding:"2px 9px",borderRadius:8,lineHeight:1}}>›</button>
         </div>
-      </div>
+      </header>
 
       {showMeses&&(
-        <Modal onClose={()=>setShowMeses(false)}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
-            <h3 style={{fontSize:15,fontWeight:600,margin:0,color:C.text}}>Escolher mês</h3>
-            <button onClick={()=>setShowMeses(false)} style={{background:"none",border:"none",cursor:"pointer",color:C.textMuted,fontSize:20}}>✕</button>
-          </div>
-          <Btn small onClick={()=>{setMesRef(mesAtualKey(ofCartoes));setShowMeses(false);}} style={{marginBottom:12}}>📅 Ir para o mês atual</Btn>
+        <PainelResponsivo isMobile={isMobile} titulo="Escolher mês" onClose={()=>setShowMeses(false)}>
+          <Btn small onClick={()=>{setMesRef(mesAtualKey(ofCartoes));setShowMeses(false);}}
+            style={{marginBottom:12,minHeight:44}}>📅 Ir para o mês atual</Btn>
           {anosComDados.length===0&&<p style={{fontSize:13,color:C.textDim}}>Nenhum mês com dados ainda.</p>}
           {anosComDados.map(ano=>(
             <div key={ano} style={{marginBottom:12}}>
               <SectionLabel>{ano}</SectionLabel>
-              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(78px,1fr))",gap:6}}>
+              <div className="grid grid-cols-[repeat(auto-fill,minmax(72px,1fr))] gap-1.5">
                 {MESES.map((nome,i)=>{
                   const k=mesKey(ano,i);
                   const tem=mesesComDados.includes(k);
                   const ativo=k===mesRef;
                   if(!tem&&!ativo) return null;
                   return(
-                    <button key={k} className="gf-btn" onClick={()=>{setMesRef(k);setShowMeses(false);}}
-                      style={{fontSize:11,padding:"7px 6px",borderRadius:8,cursor:"pointer",fontWeight:ativo?700:500,
-                        border:`1px solid ${ativo?C.teal100:C.border}`,
-                        background:ativo?C.teal50:C.surfaceAlt,
-                        color:ativo?C.teal600:C.textDim}}>
+                    <button key={k} onClick={()=>{setMesRef(k);setShowMeses(false);}} title={nome}
+                      className={cn("gf-btn min-h-[44px] rounded-lg border text-[11px] uppercase",
+                        ativo
+                          ?"border-gf-teal-100 bg-gf-teal-50 font-bold text-gf-teal-600"
+                          :"border-gf-border bg-gf-surface-alt font-medium text-gf-text-dim")}>
                       {nome.substring(0,3)}
                     </button>
                   );
@@ -2217,7 +2331,7 @@ export default function App(){
               </div>
             </div>
           ))}
-        </Modal>
+        </PainelResponsivo>
       )}
 
       {confirmar&&<ConfirmModal {...confirmar} onClose={()=>setConfirmar(null)}/>}
@@ -2283,13 +2397,19 @@ export default function App(){
         </Modal>
       )}
 
-      <div style={{maxWidth:960,margin:"0 auto",padding:isMobile?"16px 12px":"24px 16px"}}>
+      {/* O padding inferior no mobile precisa vencer a barra fixa (56px) mais a
+          safe area do iPhone, senao a ultima linha de cada tela fica embaixo dela. */}
+      <div className="mx-auto max-w-[960px] px-3 pt-4 pb-[calc(env(safe-area-inset-bottom)+84px)] md:px-4 md:pt-6 md:pb-10">
 
-        {/* Nav tabs */}
-        <div style={{display:"flex",gap:4,background:C.surface,border:`1px solid ${C.borderSoft}`,borderRadius:12,padding:4,marginBottom:20}}>
+        {/* Nav tabs — so' no desktop; no mobile a navegação vive na barra inferior */}
+        <div className="mb-5 hidden gap-1 rounded-xl border border-gf-border-soft bg-gf-surface p-1 md:flex">
           {TABS.map((t,i)=>(
-            <button key={t.l} className="gf-btn" onClick={()=>setTab(i)} style={{flex:1,fontSize:13,padding:"9px 4px",border:"none",borderRadius:9,background:tab===i?C.teal50:"transparent",color:tab===i?C.teal600:C.textDim,cursor:"pointer",fontWeight:tab===i?700:500,display:"flex",alignItems:"center",justifyContent:"center",gap:5,transition:"background .15s,color .15s"}}>
-              <span>{t.i}</span>{!isMobile&&t.l}
+            <button key={t.l} onClick={()=>setTab(i)}
+              className={cn("gf-btn flex flex-1 items-center justify-center gap-1.5 rounded-lg px-1 py-2.5 text-[13px] transition-colors",
+                tab===i
+                  ?"bg-gf-teal-50 font-bold text-gf-teal-600"
+                  :"font-medium text-gf-text-dim")}>
+              <t.Icon className="size-4" strokeWidth={tab===i?2.3:1.8}/>{t.l}
             </button>
           ))}
         </div>
@@ -2782,6 +2902,8 @@ export default function App(){
           );
         })()}
       </div>
+
+      <BottomNav tabs={TABS_MOBILE} tab={tab} onTab={setTab}/>
     </div>
   );
 }

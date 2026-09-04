@@ -14,7 +14,8 @@ App web de controle financeiro doméstico para duas pessoas (Caulin e Luanna) qu
 - **Google Sheets API** como banco de dados (via OAuth2 implicit flow, `gsi/client`)
 - **Google Apps Script** como backend do sincronizador Pluggy (vinculado à própria planilha)
 - **GitHub Pages** para hospedagem (necessário para OAuth funcionar — não funciona dentro de iframe/artifact do Claude.ai)
-- Sem bibliotecas de UI externas — tudo em inline styles puro
+- **Tailwind v4 + shadcn/ui** (componentes vendorizados em `src/components/ui/`, JSX puro)
+- A UI está **em migração**: tela migrada usa Tailwind, tela não migrada usa inline style. Os dois convivem de propósito e leem a **mesma paleta** — ver "Estilo visual"
 - Sem roteador — navegação por state (`tab`, `mesRef`)
 
 ## Estrutura de arquivos
@@ -23,7 +24,9 @@ App web de controle financeiro doméstico para duas pessoas (Caulin e Luanna) qu
 gestao-financeira/
 ├── src/
 │   ├── App.jsx           ← toda a lógica e UI do app (arquivo único, monolítico por design)
-│   ├── index.css         ← reset + color-scheme: dark (crítico, ver "Estilo visual")
+│   ├── index.css         ← tokens da paleta + reset + color-scheme: dark (crítico)
+│   ├── lib/utils.js      ← cn(), exigido por todo componente do shadcn
+│   ├── components/ui/    ← shadcn VENDORIZADO: não editar à mão, o CLI reescreve
 │   └── main.jsx          ← entry point padrão do Vite
 ├── apps-script/          ← o sincronizador do Pluggy (colado no editor do Apps Script)
 ├── scripts/qa-*.cjs      ← testes; extraem as funções puras e rodam fora do React
@@ -338,7 +341,20 @@ Superfícies: `bg #0F1115`, `surface #171A20`, `surfaceAlt #1E222A`, bordas `#2A
 
 **`color-scheme: dark` no `index.css` é crítico** — sem essa linha, `<select>`, checkboxes e scrollbars nativos renderizam brancos sobre o tema escuro.
 
-Estilo geral: cards com sombra sutil, bordas arredondadas (8-14px), tipografia do sistema (`system-ui`), `font-variant-numeric: tabular-nums` em valores monetários, sem ícones de biblioteca — usa emojis diretamente no texto (📊💰📉✅ etc.) para evitar dependência externa.
+Estilo geral: cards com sombra sutil, bordas arredondadas (8-14px), tipografia do sistema (`system-ui`), `font-variant-numeric: tabular-nums` em valores monetários.
+
+**Ícones:** emoji continua valendo como **conteúdo** (rótulo de botão, empty state, resumo do WhatsApp), mas a **navegação e o chrome usam `lucide-react`**. Emoji em nav renderiza diferente em cada sistema operacional e é colorido demais para um item inativo — era o que mais deixava o app com cara amadora no celular.
+
+### A paleta vive em dois lugares e precisa concordar
+
+O objeto `C` no topo do `App.jsx` (inline styles) e as variáveis `--gf-*` em `index.css` (Tailwind) são **o mesmo valor escrito duas vezes**. Mudou um, muda o outro — senão tela migrada e tela não migrada divergem no meio do app.
+
+Os tokens semânticos do shadcn (`--primary`, `--card`, `--border`…) apontam para os `--gf-*`, então os componentes vendorizados já nascem na paleta certa. Dois detalhes não óbvios:
+
+- **`--primary-foreground` é escuro**, não claro: aqui o primary é o teal vivo.
+- **Os utilitários da paleta levam prefixo `gf-`** (`bg-gf-teal-50`, `text-gf-text-dim`). Não é enfeite: nesta paleta o sufixo `*50` é um fundo **escuro** e o `*600` é a cor viva, o inverso da escala do Tailwind. Sem o prefixo, `bg-amber-50` pareceria creme e pintaria marrom.
+
+**O breakpoint mobile é 768px em três lugares e os três têm que concordar:** `md:` do Tailwind (`min-width:768px`), `isMobile` no `App.jsx` (`max-width:767.98px`) e o `@media` do `index.css`. Se divergirem, abre uma faixa de largura em que o CSS já está em modo mobile e o JS ainda acha que é desktop.
 
 ## O que NÃO fazer sem perguntar antes
 
@@ -355,7 +371,7 @@ Estilo geral: cards com sombra sutil, bordas arredondadas (8-14px), tipografia d
 
 - Otimizar sync para update incremental em vez de clear+append total (importante se o histórico crescer muito)
 - Gráfico de comparativo mês a mês
-- Layout mobile: as tabelas ainda rolam na horizontal (decisão: amadurecer o desktop primeiro)
+- Layout mobile: as tabelas ainda rolam na horizontal — **próxima fase do redesenho**, viram cards abaixo de 768px
 - Ambiente de staging — hoje se edita a planilha de produção direto
 - Total de gastos com tag "Férias/" separado
 - Adicionar a Luanna como segunda usuária de teste no Google Cloud
