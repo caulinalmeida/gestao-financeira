@@ -1,6 +1,20 @@
-/* Base global do tema dark.
-   O app usa inline styles em App.jsx; este arquivo cobre só o que inline style
-   não alcança: controles nativos, foco, seleção, scrollbar e placeholders. */
+/* ─────────────────────────────────────────────────────────────────────────────
+   Base global do tema dark.
+
+   O app está em migração: a UI antiga usa inline styles em App.jsx, a nova usa
+   Tailwind + shadcn/ui. Os dois convivem de propósito — a migração é tela a
+   tela, e a única forma de nenhuma tela ficar meio-a-meio é as duas camadas
+   lerem a MESMA paleta. É o que os tokens abaixo garantem: `C` no App.jsx e as
+   variáveis CSS daqui são o mesmo valor escrito duas vezes.
+   ───────────────────────────────────────────────────────────────────────────── */
+
+@import "tailwindcss";
+@import "tw-animate-css";
+
+/* O app é dark-only (não há toggle de tema). Ainda assim declaramos a variante
+   para os componentes do shadcn que trazem classes `dark:` embutidas — sem
+   isso elas nunca casariam e alguns componentes ficariam com cor de tema claro. */
+@custom-variant dark (&:is(.dark *, .dark));
 
 :root{
   /* color-scheme: dark faz o navegador renderizar <select>, <option>,
@@ -8,10 +22,96 @@
      dropdowns nativos aparecem brancos sobre o fundo escuro. */
   color-scheme: dark;
 
+  /* ── Paleta do app (espelha o objeto `C` no topo do App.jsx) ── */
   --gf-bg:#0F1115;
-  --gf-text:#E7EAF0;
-  --gf-teal:#2DD4A7;
+  --gf-surface:#171A20;
+  --gf-surface-alt:#1E222A;
   --gf-border:#2A2F3A;
+  --gf-border-soft:#21252D;
+  --gf-text:#E7EAF0;
+  --gf-text-dim:#98A0AE;
+  --gf-text-muted:#666E7D;
+
+  --gf-teal-50:#0E3B31;   --gf-teal-100:#1C5C4B;  --gf-teal-600:#2DD4A7;
+  --gf-purple-50:#2A2445; --gf-purple-100:#3B3468;--gf-purple-600:#A78BFA;
+  --gf-amber-50:#3A2E14;  --gf-amber-100:#5A4720; --gf-amber-600:#FBBF24;
+  --gf-red-50:#3B1F22;    --gf-red-100:#5C2E33;   --gf-red-600:#F87171;
+  --gf-green-50:#16301F;  --gf-green-100:#22482F; --gf-green-600:#4ADE80;
+  --gf-blue-50:#16283F;   --gf-blue-100:#23405F;  --gf-blue-600:#60A5FA;
+
+  /* ── Tokens semânticos do shadcn/ui, apontados para a paleta acima ──
+     Só os valores dark existem: não há tema claro a alternar. --primary é o
+     teal, então --primary-foreground precisa ser ESCURO (texto escuro sobre
+     botão vivo), ao contrário do padrão do shadcn. */
+  --background:var(--gf-bg);
+  --foreground:var(--gf-text);
+  --card:var(--gf-surface);
+  --card-foreground:var(--gf-text);
+  --popover:var(--gf-surface);
+  --popover-foreground:var(--gf-text);
+  --primary:var(--gf-teal-600);
+  --primary-foreground:#08130F;
+  --secondary:var(--gf-surface-alt);
+  --secondary-foreground:var(--gf-text);
+  --muted:var(--gf-surface-alt);
+  --muted-foreground:var(--gf-text-dim);
+  --accent:var(--gf-surface-alt);
+  --accent-foreground:var(--gf-text);
+  --destructive:var(--gf-red-600);
+  --destructive-foreground:#1A0B0C;
+  --border:var(--gf-border);
+  --input:var(--gf-border);
+  --ring:var(--gf-teal-600);
+  --radius:0.625rem;
+}
+
+/* Expõe os tokens como utilitários do Tailwind: `bg-surface`, `text-text-dim`,
+   `border-border`, `text-teal-600` etc. `inline` mantém a referência à variável
+   em vez de congelar o valor — é o que permite trocar a paleta num lugar só. */
+@theme inline{
+  --color-background:var(--background);
+  --color-foreground:var(--foreground);
+  --color-card:var(--card);
+  --color-card-foreground:var(--card-foreground);
+  --color-popover:var(--popover);
+  --color-popover-foreground:var(--popover-foreground);
+  --color-primary:var(--primary);
+  --color-primary-foreground:var(--primary-foreground);
+  --color-secondary:var(--secondary);
+  --color-secondary-foreground:var(--secondary-foreground);
+  --color-muted:var(--muted);
+  --color-muted-foreground:var(--muted-foreground);
+  --color-accent:var(--accent);
+  --color-accent-foreground:var(--accent-foreground);
+  --color-destructive:var(--destructive);
+  --color-destructive-foreground:var(--destructive-foreground);
+  --color-border:var(--border);
+  --color-input:var(--input);
+  --color-ring:var(--ring);
+
+  /* Paleta do app, sempre com prefixo `gf-`: `bg-gf-surface`, `text-gf-text-dim`,
+     `border-gf-teal-100`. O prefixo nao e' enfeite — nesta paleta o sufixo *50 e'
+     um fundo ESCURO e o *600 e' a cor viva, o inverso da escala do Tailwind.
+     Sem o prefixo, `bg-amber-50` pareceria creme e pintaria marrom. */
+  --color-gf-surface:var(--gf-surface);
+  --color-gf-surface-alt:var(--gf-surface-alt);
+  --color-gf-border:var(--gf-border);
+  --color-gf-border-soft:var(--gf-border-soft);
+  --color-gf-text:var(--gf-text);
+  --color-gf-text-dim:var(--gf-text-dim);
+  --color-gf-text-muted:var(--gf-text-muted);
+
+  --color-gf-teal-50:var(--gf-teal-50);    --color-gf-teal-100:var(--gf-teal-100);   --color-gf-teal-600:var(--gf-teal-600);
+  --color-gf-purple-50:var(--gf-purple-50);--color-gf-purple-100:var(--gf-purple-100);--color-gf-purple-600:var(--gf-purple-600);
+  --color-gf-amber-50:var(--gf-amber-50);  --color-gf-amber-100:var(--gf-amber-100); --color-gf-amber-600:var(--gf-amber-600);
+  --color-gf-red-50:var(--gf-red-50);      --color-gf-red-100:var(--gf-red-100);     --color-gf-red-600:var(--gf-red-600);
+  --color-gf-green-50:var(--gf-green-50);  --color-gf-green-100:var(--gf-green-100); --color-gf-green-600:var(--gf-green-600);
+  --color-gf-blue-50:var(--gf-blue-50);    --color-gf-blue-100:var(--gf-blue-100);   --color-gf-blue-600:var(--gf-blue-600);
+
+  --radius-sm:calc(var(--radius) - 4px);
+  --radius-md:calc(var(--radius) - 2px);
+  --radius-lg:var(--radius);
+  --radius-xl:calc(var(--radius) + 4px);
 }
 
 *{ box-sizing: border-box; }
@@ -31,7 +131,7 @@ body{
    teclado e acessibilidade. :focus-visible não dispara em clique de mouse. */
 :focus{ outline:none; }
 :focus-visible{
-  outline:2px solid var(--gf-teal);
+  outline:2px solid var(--gf-teal-600);
   outline-offset:2px;
   border-radius:6px;
 }
@@ -49,7 +149,7 @@ input:hover:not(:disabled),select:hover:not(:disabled),textarea:hover:not(:disab
   border-color:#3A4150 !important;
 }
 input:focus,select:focus,textarea:focus{
-  border-color:var(--gf-teal) !important;
+  border-color:var(--gf-teal-600) !important;
 }
 
 /* Remove as setinhas do input[type=number] — o campo de valor fica mais limpo
