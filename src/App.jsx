@@ -1221,7 +1221,7 @@ function CardFatura({r,pessoas,onCampo,onIgnorar,onAprender,onLegado,onRemoverLe
       <button onClick={()=>setAberto(a=>!a)} aria-expanded={aberto}
         className="flex w-full items-start gap-2.5 p-3 text-left">
         <div className="min-w-0 flex-1">
-          <div className={cn("truncate text-[13px] font-medium text-gf-text",r.ignorada&&"line-through")}>
+          <div className={cn("line-clamp-2 text-[13px] leading-snug font-medium break-words text-gf-text",r.ignorada&&"line-through")}>
             {r.nome}
           </div>
           <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-[10px] text-gf-text-muted">
@@ -1258,7 +1258,7 @@ function CardFatura({r,pessoas,onCampo,onIgnorar,onAprender,onLegado,onRemoverLe
 
       {aberto&&(
         <div className="border-t border-gf-border-soft p-3 pt-2.5">
-          <div className="grid gap-2.5">
+          <div className="grid grid-cols-1 gap-2.5">
             <div>
               <span className={rotulo}>Dono</span>
               <DonoSelect value={r.dono} pessoas={pessoas} width="100%"
@@ -1371,7 +1371,7 @@ function TabelaFatura({titulo,subtitulo,linhas,isMobile,pessoas,filtro,setFiltro
       {isMobile?(
         <>
           <BarraOrdenacao cols={COLS_FATURA} sort={sort} definir={definirSort}/>
-          <div className="grid gap-2">
+          <div className="grid grid-cols-1 gap-2">
             {vis.map(r=>(
               <CardFatura key={r.id} r={r} pessoas={pessoas}
                 onCampo={onCampo} onIgnorar={onIgnorar} onAprender={onAprender}
@@ -1483,7 +1483,7 @@ function CardCompra({c}){
     <div className="rounded-xl border border-gf-border-soft bg-gf-surface-alt p-3">
       <div className="flex items-start gap-2.5">
         <div className="min-w-0 flex-1">
-          <div className="truncate text-[13px] font-medium text-gf-text" title={c.nome}>{c.nome}</div>
+          <div className="line-clamp-2 text-[13px] leading-snug font-medium break-words text-gf-text" title={c.nome}>{c.nome}</div>
           {/* A obs é o que você escreveu na fatura — costuma ser o nome de verdade
               da compra, já que a descrição do banco vem cifrada. */}
           {c.obs&&<div className="truncate text-[11px] text-gf-text-dim" title={c.obs}>{c.obs}</div>}
@@ -1541,7 +1541,7 @@ function PainelParcelas({proj,mesRef,isMobile,onVerMes}){
 
   return(
     <div>
-      <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"repeat(3,1fr)",gap:10,marginBottom:14}}>
+      <div style={{display:"grid",gridTemplateColumns:isMobile?"repeat(2,minmax(0,1fr))":"repeat(3,minmax(0,1fr))",gap:10,marginBottom:14}}>
         <MetricCard label={`Parcelas em ${mesLabelCurto(mesRef)}`} icon="📅"
           value={fmtBRL(totalMesBase)} accent="blue"
           sub={`${porMes[0]?.qtd||0} parcela${(porMes[0]?.qtd||0)===1?"":"s"}`}/>
@@ -1606,7 +1606,7 @@ function PainelParcelas({proj,mesRef,isMobile,onVerMes}){
         {isMobile?(
           <>
             <BarraOrdenacao cols={COLS_COMPRAS} sort={sort} definir={definirSort}/>
-            <div className="grid gap-2">
+            <div className="grid grid-cols-1 gap-2">
               {comprasOrd.map(c=><CardCompra key={c.chave} c={c}/>)}
             </div>
           </>
@@ -1733,7 +1733,7 @@ function PainelConfig({dict,onDict,pessoas,onPessoas,usoDoDict,isMobile}){
           :isMobile?(
             <>
               <BarraOrdenacao cols={COLS_DICT} sort={sort} definir={definirSort}/>
-              <div className="grid gap-2">
+              <div className="grid grid-cols-1 gap-2">
                 {visiveis.map((d,i)=>{
                   const idx=dict.indexOf(d);
                   const upd=(campo,v)=>onDict(dict.map((x,j)=>j===idx?{...x,[campo]:v}:x));
@@ -2691,12 +2691,12 @@ export default function App(){
           {isMobile?(
             <>
               <BarraOrdenacao cols={COLS_PARC_MES} sort={sortParcMes} definir={definirParcMes}/>
-              <div className="grid gap-2">
+              <div className="grid grid-cols-1 gap-2">
                 {ordenarLinhas(parcelaMes.itens,sortParcMes,ACESSORES_PARC_MES).map(pp=>(
                   <div key={pp.chave+pp.num}
                     className="flex items-start gap-2.5 rounded-xl border border-gf-border-soft bg-gf-surface-alt p-3">
                     <div className="min-w-0 flex-1">
-                      <div className="truncate text-[13px] font-medium text-gf-text">{pp.nome}</div>
+                      <div className="line-clamp-2 text-[13px] leading-snug font-medium break-words text-gf-text">{pp.nome}</div>
                       <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-[10px] text-gf-text-muted">
                         <span>{pp.cartao}</span>
                         <span>·</span>
@@ -2861,7 +2861,7 @@ export default function App(){
                   :isMobile?(
                     <>
                       <BarraOrdenacao cols={COLS_MANUAL} sort={sortManual} definir={definirManual}/>
-                      <div className="grid gap-2">
+                      <div className="grid grid-cols-1 gap-2">
                         {ordenarLinhas(manual,sortManual,ACESSORES_MANUAL).map(r=>(
                           <CardForm key={r.id} onRemover={()=>setConfirmar({titulo:"Remover lançamento?",texto:`“${r.nome||"(sem descrição)"}” será removido de ${mesLabel(mesRef)}.`,onConfirm:()=>rmM(r.id)})}>
                             <CampoCard label="Descrição" largo>
@@ -2940,7 +2940,7 @@ export default function App(){
               :isMobile?(
                 <>
                   <BarraOrdenacao cols={COLS_CONTAS} sort={sortContas} definir={definirContas}/>
-                  <div className="grid gap-2">
+                  <div className="grid grid-cols-1 gap-2">
                     {ordenarLinhas(contas,sortContas,ACESSORES_CONTAS).map(r=>(
                       <CardForm key={r.id} onRemover={()=>setConfirmar({titulo:"Remover conta?",texto:`“${r.transacao||"(sem descrição)"}” será removida de ${mesLabel(mesRef)}.`,onConfirm:()=>rmC(r.id)})}>
                         <CampoCard label="Transação" largo>
@@ -2996,7 +2996,7 @@ export default function App(){
               :isMobile?(
                 <>
                   <BarraOrdenacao cols={COLS_INVEST} sort={sortInvest} definir={definirInvest}/>
-                  <div className="grid gap-2">
+                  <div className="grid grid-cols-1 gap-2">
                     {ordenarLinhas(invest,sortInvest,ACESSORES_INVEST).map(r=>(
                       <CardForm key={r.id} onRemover={()=>setConfirmar({titulo:"Remover investimento?",texto:`“${r.descricao||"(sem descrição)"}” será removido de ${mesLabel(mesRef)}.`,onConfirm:()=>rmI(r.id)})}>
                         <CampoCard label="Descrição" largo>
@@ -3132,7 +3132,7 @@ export default function App(){
                   Toda linha de detalhe abre a lista por trás do número. */}
 
               <div style={{display:"grid",
-                gridTemplateColumns:isMobile?"1fr":"repeat(3,1fr)",gap:10,marginBottom:10}}>
+                gridTemplateColumns:isMobile?"minmax(0,1fr)":"repeat(3,minmax(0,1fr))",gap:10,marginBottom:10}}>
                 <MetricCard label="Renda total" value={fmtBRL(renda.total)} accent="teal" icon="💰">
                   <DetalheCard cor={C.teal600} linhas={CASAL.map(p=>({
                     rot:p,valor:renda[p],sempre:true,
@@ -3160,7 +3160,7 @@ export default function App(){
               </div>
 
               <div style={{display:"grid",
-                gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:10,marginBottom:10}}>
+                gridTemplateColumns:isMobile?"minmax(0,1fr)":"repeat(2,minmax(0,1fr))",gap:10,marginBottom:10}}>
                 {CASAL.map(pessoa=>{
                   const cor=pessoa==="Caulin"?C.teal600:C.purple600;
                   const total=fixas[pessoa]+variaveis[pessoa]+cartao[pessoa];
@@ -3195,7 +3195,7 @@ export default function App(){
               </div>
 
               <div style={{display:"grid",
-                gridTemplateColumns:isMobile?"1fr":"repeat(auto-fit,minmax(200px,1fr))",
+                gridTemplateColumns:isMobile?"minmax(0,1fr)":"repeat(auto-fit,minmax(200px,1fr))",
                 gap:10,marginBottom:20}}>
                 {totalFaturaCartoes.map(({nome,total,pagos,fixos,parcelados,variaveis:vars})=>{
                   const pct=total>0?Math.round((pagos/total)*100):0;
@@ -3263,7 +3263,7 @@ export default function App(){
               )}
 
               {/* Checklists — empilham no mobile em vez de espremer duas colunas */}
-              <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:12}}>
+              <div style={{display:"grid",gridTemplateColumns:isMobile?"minmax(0,1fr)":"repeat(2,minmax(0,1fr))",gap:12}}>
                 {["Caulin","Luanna"].map(pessoa=>{
                   const accent=pessoa==="Caulin"?ACCENTS.teal:ACCENTS.purple;
                   return(
@@ -3326,7 +3326,7 @@ export default function App(){
               {/* Um resumo por pessoa: cada uma recebe só o que lhe cabe, com
                   os itens já divididos. O resumo conjunto virava um texto que
                   ninguém conseguia usar para pagar as próprias contas. */}
-              <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",
+              <div style={{display:"grid",gridTemplateColumns:isMobile?"minmax(0,1fr)":"repeat(2,minmax(0,1fr))",
                 gap:10,marginTop:16}}>
                 {CASAL.map(pessoa=>{
                   const eu=copied===pessoa;

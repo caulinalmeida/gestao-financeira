@@ -841,6 +841,51 @@ console.log('=== 17. parseDataHora / horasDesde ===');
      Math.abs(HD(br) - 1) < 0.02);
 }
 
+// -- 18. Layout: o piso de min-content -----------------------------------
+// Analise estatica do fonte, nao execucao: layout nao roda aqui. Mas a CAUSA
+// da' para ver no texto, e ela mordeu duas vezes seguidas -- uma descricao
+// longa ("IOF INTERNACIONAL - ANTHROPIC* CLAUDE SUBSAN FRANCISCOUSA")
+// esticava o cartao para alem da tela e a pagina inteira passava a arrastar
+// para o lado no celular.
+//
+// Um track "1fr" e' "minmax(auto,1fr)", e esse auto tem como MINIMO o
+// min-content do item. Nao cabendo, o track cresce em vez de o texto encolher
+// -- truncate e overflow:hidden nao salvam, porque o piso e' calculado antes.
+// "minmax(0,1fr)" remove o piso, e e' o que "grid-cols-N" do Tailwind gera.
+//
+// Escrito sem expressao regular de proposito: os scripts deste projeto sao
+// colados por heredoc, que come barra invertida.
+{
+  console.log('');
+  console.log('-- 18. Layout: nenhum grid com piso de min-content --');
+
+  // 18a. grids inline. Tira todo minmax(...) e ve se sobrou algum 1fr cru.
+  const trechos = src.split('gridTemplateColumns:').slice(1).map(t => t.slice(0, 160));
+  const crus = trechos.filter(t => {
+    let limpo = t;
+    while (limpo.includes('minmax(')) {
+      const i = limpo.indexOf('minmax(');
+      const j = limpo.indexOf(')', i);
+      if (j === -1) break;
+      limpo = limpo.slice(0, i) + limpo.slice(j + 1);
+    }
+    return limpo.includes('1fr');
+  });
+  ok('nenhum gridTemplateColumns inline usa 1fr sem minmax',
+     crus.length === 0, crus.map(t => t.slice(0, 60)).join(' | '));
+
+  // 18b. listas em grid do Tailwind. So' vale quando ha' gap-: um
+  // "grid place-items-center" de icone unico nao precisa de coluna.
+  const listas = src.split('className="').slice(1)
+    .map(t => t.split('"')[0])
+    .filter(c => (' ' + c + ' ').includes(' grid ') && c.includes('gap-'));
+  const semCols = listas.filter(c => !c.includes('grid-cols-'));
+  ok('toda lista `grid ... gap-*` declara grid-cols',
+     semCols.length === 0, semCols.join(' | '));
+  ok('as listas de cartoes existem e foram conferidas', listas.length >= 5,
+     'achou ' + listas.length);
+}
+
 console.log('\n' + '='.repeat(52));
 console.log('RESULTADO: ' + passes + ' passaram, ' + falhas + ' falharam');
 console.log('='.repeat(52));
