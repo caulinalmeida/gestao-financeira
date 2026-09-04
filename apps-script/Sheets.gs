@@ -115,6 +115,17 @@ function gravarCartoes(cartoes) {
     ];
   });
   escreverLinhas(s, linhas, COLS_CARTOES.length);
+
+  // Fechamento e vencimento sao NUMEROS (3, 10). Sem forcar o formato, a
+  // celula herda formatacao de data e a API do Sheets devolve "1900-01-02" no
+  // lugar de "3" - que e o serial 3 lido como data. O app entao nao consegue o
+  // dia, cai no mes do calendario e ninguem fica sabendo.
+  // Mesma familia do mes_ref virando Date: numero gravado em celula com
+  // formato herdado deixa de ser numero na leitura.
+  if (linhas.length) {
+    s.getRange(2, col(COLS_CARTOES, 'fechamento') + 1, linhas.length, 1).setNumberFormat('0');
+    s.getRange(2, col(COLS_CARTOES, 'vencimento') + 1, linhas.length, 1).setNumberFormat('0');
+  }
 }
 
 // ── OF_FATURAS ───────────────────────────────────────────────────────────────
