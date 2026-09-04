@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback, useEffect, useSyncExternalStore } from "react";
 import { CreditCard, CalendarDays, Receipt, TrendingUp, CircleCheckBig,
-         Settings, ChevronLeft, ChevronRight, X } from "lucide-react";
+         Settings, ChevronLeft, ChevronRight, ChevronDown, ArrowUp, ArrowDown, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
 
@@ -600,6 +600,11 @@ function projetarParcelas(transacoes,ajustes,dict,cartoes,mesBase,horizonte){
 // ── Styles ────────────────────────────────────────────────────────────────────
 const inp={fontSize:13,padding:"6px 10px",borderRadius:8,border:`1px solid ${C.border}`,background:C.surfaceAlt,color:C.text,width:"100%",boxSizing:"border-box",outline:"none"};
 const sel={...inp,cursor:"pointer"};
+// Versão mobile dos campos: largura total e 40px de alvo. Nas tabelas os
+// campos têm largura fixa em px porque disputam a coluna; no cartão cada um
+// tem a linha inteira, e 6px de padding vertical vira alvo pequeno demais.
+const inpM={...inp,minHeight:40};
+const selM={...sel,minHeight:40};
 const card={background:C.surface,border:`1px solid ${C.borderSoft}`,borderRadius:14,padding:"1rem 1.25rem",marginBottom:12,boxShadow:"0 1px 3px rgba(0,0,0,0.35)"};
 const th={padding:"9px 10px",textAlign:"left",color:C.textMuted,fontWeight:600,fontSize:10,whiteSpace:"nowrap",borderBottom:`1px solid ${C.border}`,textTransform:"uppercase",letterSpacing:"0.06em"};
 const td={padding:"8px 10px",fontSize:13,color:C.text,borderBottom:`1px solid ${C.borderSoft}`};
@@ -658,7 +663,12 @@ function useSort(){
   const [sort,setSort]=useState(null);
   const toggle=useCallback(col=>setSort(s=>
     !s||s.col!==col?{col,dir:"asc"}:s.dir==="asc"?{col,dir:"desc"}:null),[]);
-  return [sort,toggle];
+  // `definir` é o que a barra de ordenação do mobile usa. Lá coluna e direção
+  // são dois controles separados, então ciclar não serve — precisa poder dizer
+  // exatamente o estado desejado. Vem como terceiro item para não quebrar quem
+  // já desestrutura `const [sort,toggle]=useSort()`.
+  const definir=useCallback((col,dir)=>setSort(col?{col,dir:dir||"asc"}:null),[]);
+  return [sort,toggle,definir];
 }
 
 // ── UI Components ─────────────────────────────────────────────────────────────
@@ -747,6 +757,67 @@ function PainelResponsivo({isMobile,onClose,titulo,descricao,children,wide}){
       {descricao&&<p style={{fontSize:12,color:C.textMuted,margin:"0 0 14px",lineHeight:1.6}}>{descricao}</p>}
       {children}
     </Modal>
+  );
+}
+
+/**
+ * Ordenação no mobile, onde não existe cabeçalho de tabela para clicar.
+ *
+ * Sem isso, virar as tabelas em cartões levaria junto a ordenação — que foi
+ * pedida explicitamente e some sem aviso. Fala o mesmo protocolo do `Thead`
+ * (`sort` = {col,dir}), mas usa `definir` em vez de `toggle`: aqui a coluna e a
+ * direção são dois controles, e ciclar asc→desc→nenhum num select confundiria.
+ */
+/** Um campo rótulado dentro de um cartão de formulário. `largo` ocupa as duas colunas. */
+function CampoCard({label,largo,children}){
+  return(
+    <div className={largo?"col-span-2":undefined}>
+      <span className="mb-1 block text-[10px] uppercase tracking-wide text-gf-text-muted">{label}</span>
+      {children}
+    </div>
+  );
+}
+
+/**
+ * Cartão de um lançamento editável no mobile (contas, investimentos, manuais,
+ * dicionário).
+ *
+ * Aqui os campos ficam todos à vista, ao contrário do `CardFatura` que esconde
+ * atrás de um toque: estas são telas de digitação, e quem abre já vem para
+ * editar. Esconder o campo custaria um toque por lançamento.
+ */
+function CardForm({children,onRemover,rodape}){
+  return(
+    <div className="rounded-xl border border-gf-border-soft bg-gf-surface-alt p-3">
+      <div className="grid grid-cols-2 gap-2.5">{children}</div>
+      {(onRemover||rodape)&&(
+        <div className="mt-3 flex items-center justify-between gap-2">
+          <div className="min-w-0 text-[11px] text-gf-text-muted">{rodape}</div>
+          {onRemover&&<Btn danger small style={{minHeight:40}} onClick={onRemover}>✕ Remover</Btn>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function BarraOrdenacao({cols,sort,definir}){
+  const opcoes=cols.filter(Boolean);          // a coluna de ações tem rótulo ""
+  const col=sort?sort.col:"";
+  const desc=!!sort&&sort.dir==="desc";
+  return(
+    <div className="mb-2.5 flex items-center gap-1.5">
+      <select value={col} onChange={e=>definir(e.target.value||null,"asc")}
+        aria-label="Ordenar por"
+        className="h-10 min-w-0 flex-1 rounded-lg border border-gf-border bg-gf-surface-alt px-2.5 text-xs text-gf-text">
+        <option value="">Ordem original</option>
+        {opcoes.map(c=><option key={c} value={c}>{c}</option>)}
+      </select>
+      <button onClick={()=>definir(col,desc?"asc":"desc")} disabled={!col}
+        title={desc?"Decrescente":"Crescente"} aria-label={desc?"Decrescente":"Crescente"}
+        className="gf-btn grid size-10 shrink-0 place-items-center rounded-lg border border-gf-border bg-gf-surface-alt text-gf-text-dim disabled:opacity-40">
+        {desc?<ArrowDown className="size-4"/>:<ArrowUp className="size-4"/>}
+      </button>
+    </div>
   );
 }
 
@@ -1084,11 +1155,117 @@ const ACESSORES_PARC_MES={
 };
 
 /** Tabela de fatura. Serve tanto para Open Finance quanto para linhas legadas. */
+/**
+ * Uma transação da fatura, no mobile.
+ *
+ * A tabela tem 8 colunas e 680px de largura mínima: num aparelho de 390px ela
+ * rola inteira na horizontal e os controles de edição nascem fora da tela. O
+ * cartão fechado responde a pergunta comum — o que é, quanto, de quem — em
+ * três linhas; editar é o caso raro e só aparece ao tocar.
+ *
+ * Expande no lugar em vez de abrir gaveta: `DonoSelect` já abre o próprio modal
+ * de "dividir entre", e overlay dentro de overlay briga por foco. De quebra,
+ * dá para abrir duas linhas e comparar.
+ */
+function CardFatura({r,pessoas,onCampo,onIgnorar,onAprender,onLegado,onRemoverLegado}){
+  const [aberto,setAberto]=useState(false);
+  const leg=r.origem==="LEGADO";
+  const pag=r.natureza==="PAGAMENTO";
+  const semDono=!r.dono&&!pag&&!r.ignorada;
+  // A fatura do Open Finance e a linha legada gravam campos com nomes diferentes.
+  const set=(campoOF,campoLeg,v)=>leg?onLegado(r.id,campoLeg,v):onCampo(r,campoOF,v);
+  const rotulo="mb-1 block text-[10px] uppercase tracking-wide text-gf-text-muted";
+
+  return(
+    <div className={cn("rounded-xl border",
+      r.isNew?"border-gf-amber-100 bg-gf-amber-50/40":"border-gf-border-soft bg-gf-surface-alt",
+      r.ignorada&&"opacity-45")}>
+
+      <button onClick={()=>setAberto(a=>!a)} aria-expanded={aberto}
+        className="flex w-full items-start gap-2.5 p-3 text-left">
+        <div className="min-w-0 flex-1">
+          <div className={cn("truncate text-[13px] font-medium text-gf-text",r.ignorada&&"line-through")}>
+            {r.nome}
+          </div>
+          <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-[10px] text-gf-text-muted">
+            <span>{dataCurta(r.data)||r.data}</span>
+            {r.cartao&&<><span>·</span><span>{r.cartao}</span></>}
+            {r.parcela&&<><span>·</span><span>{r.parcela}</span></>}
+            {pag&&<span className="text-gf-blue-600">pagamento</span>}
+            {r.natureza==="ESTORNO"&&<span className="text-gf-green-600">estorno</span>}
+            {leg&&<span>legado</span>}
+          </div>
+          <div className="mt-1.5 flex flex-wrap items-center gap-1">
+            <span className={cn("rounded-full border px-1.5 py-px text-[10px]",
+              semDono
+                ?"border-gf-amber-100 bg-gf-amber-50 font-semibold text-gf-amber-600"
+                :"border-gf-border bg-gf-surface text-gf-text-dim")}>
+              {r.dono?rotuloDono(r.dono):"sem dono"}
+            </span>
+            {!pag&&(
+              <span className="rounded-full border border-gf-border bg-gf-surface px-1.5 py-px text-[10px] text-gf-text-dim">
+                {r.parcelas}
+              </span>
+            )}
+            {r.obs&&<span className="min-w-0 truncate text-[10px] text-gf-text-muted">{r.obs}</span>}
+          </div>
+        </div>
+        <div className="flex shrink-0 flex-col items-end gap-1.5">
+          <span className={cn("text-[13px] font-semibold tabular-nums",
+            r.valor<0?"text-gf-green-600":"text-gf-text")}>{fmtBRL(r.valor)}</span>
+          <ChevronDown className={cn("size-4 text-gf-text-muted transition-transform",aberto&&"rotate-180")}/>
+        </div>
+      </button>
+
+      {aberto&&(
+        <div className="border-t border-gf-border-soft p-3 pt-2.5">
+          <div className="grid gap-2.5">
+            <div>
+              <span className={rotulo}>Dono</span>
+              <DonoSelect value={r.dono} pessoas={pessoas} width="100%"
+                onChange={v=>set("dono","dono",v)}
+                style={{minHeight:40,opacity:pag?0.4:1,borderColor:semDono?C.amber100:C.border}}/>
+            </div>
+            <div>
+              <span className={rotulo}>Classificação</span>
+              <select value={r.parcelas} disabled={pag}
+                onChange={e=>set("classificacao","parcelas",e.target.value)}
+                style={{...sel,width:"100%",minHeight:40,opacity:pag?0.4:1}}>
+                {PARC_OPTS.map(d=><option key={d}>{d}</option>)}
+              </select>
+            </div>
+            <div>
+              <span className={rotulo}>Observação</span>
+              <input value={r.obs} disabled={pag} placeholder="—"
+                onChange={e=>set("obs","obs",e.target.value)}
+                style={{...inp,width:"100%",minHeight:40,opacity:pag?0.4:1}}/>
+            </div>
+          </div>
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            {!leg&&r.isNew&&r.dono&&(
+              <Btn small onClick={()=>onAprender(r)} title="Salvar no dicionário"
+                style={{minHeight:40,color:C.green600,borderColor:C.green100,background:C.green50}}>Aprender</Btn>
+            )}
+            <span className="flex-1"/>
+            {leg
+              ?<Btn danger small style={{minHeight:40}} onClick={()=>onRemoverLegado(r.id)}>✕ Remover</Btn>
+              :<Btn small danger={!r.ignorada} style={{minHeight:40}}
+                  title={r.ignorada?"Voltar a contar":"Ignorar — sai dos totais"}
+                  onClick={()=>onIgnorar(r,!r.ignorada)}>
+                  {r.ignorada?"↩ Voltar a contar":"🚫 Ignorar"}
+                </Btn>}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function TabelaFatura({titulo,subtitulo,linhas,isMobile,pessoas,filtro,setFiltro,
   mostrarIgnoradas,setMostrarIgnoradas,mostrarPagamentos,setMostrarPagamentos,
   onCampo,onIgnorar,onAprender,onLegado,onRemoverLegado}){
 
-  const [sort,toggleSort]=useSort();
+  const [sort,toggleSort,definirSort]=useSort();
   const filtros=["TODOS","PARCELADO","RECORRENTE","VARIÁVEL","NOVO"];
   const vis=ordenarLinhas(
     linhas.filter(r=>filtro==="TODOS"?true:filtro==="NOVO"?r.isNew:r.parcelas===filtro),
@@ -1140,8 +1317,20 @@ function TabelaFatura({titulo,subtitulo,linhas,isMobile,pessoas,filtro,setFiltro
         </label>
       </div>
 
+      {isMobile?(
+        <>
+          <BarraOrdenacao cols={COLS_FATURA} sort={sort} definir={definirSort}/>
+          <div className="grid gap-2">
+            {vis.map(r=>(
+              <CardFatura key={r.id} r={r} pessoas={pessoas}
+                onCampo={onCampo} onIgnorar={onIgnorar} onAprender={onAprender}
+                onLegado={onLegado} onRemoverLegado={onRemoverLegado}/>
+            ))}
+          </div>
+        </>
+      ):(
       <div style={{overflowX:"auto"}}>
-        <table style={{width:"100%",fontSize:12,borderCollapse:"collapse",minWidth:isMobile?620:680}}>
+        <table style={{width:"100%",fontSize:12,borderCollapse:"collapse",minWidth:680}}>
           <Thead cols={COLS_FATURA} sort={sort} toggle={toggleSort}/>
           <tbody>
             {vis.map(r=>{
@@ -1195,6 +1384,7 @@ function TabelaFatura({titulo,subtitulo,linhas,isMobile,pessoas,filtro,setFiltro
           </tbody>
         </table>
       </div>
+      )}
       {vis.length===0&&<EmptyState icon="🔍">Nenhum lançamento com esse filtro.</EmptyState>}
     </div>
   );
@@ -1228,9 +1418,65 @@ const ACESSORES_COMPRAS={
   "Restam":c=>c.restantes,"Falta":c=>c.falta,"Termina":c=>c.mesFinal,
 };
 
+/**
+ * Uma compra parcelada em andamento, no mobile.
+ *
+ * Diferente do `CardFatura`, aqui não há nada para editar — a aba Parcelas é
+ * derivada, não armazena. Então as nove colunas cabem abertas: identificação em
+ * cima, os três números que importam ("qual parcela", "quanto por mês", "quanto
+ * falta") numa faixa, e o mês de término no rodapé.
+ */
+function CardCompra({c}){
+  const corDono=c.dono==="Luanna"?"text-gf-purple-600":c.dono==="Caulin"?"text-gf-teal-600":"text-gf-text-dim";
+  return(
+    <div className="rounded-xl border border-gf-border-soft bg-gf-surface-alt p-3">
+      <div className="flex items-start gap-2.5">
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-[13px] font-medium text-gf-text" title={c.nome}>{c.nome}</div>
+          {/* A obs é o que você escreveu na fatura — costuma ser o nome de verdade
+              da compra, já que a descrição do banco vem cifrada. */}
+          {c.obs&&<div className="truncate text-[11px] text-gf-text-dim" title={c.obs}>{c.obs}</div>}
+          <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-[10px] text-gf-text-muted">
+            <span>{c.cartao}</span>
+            <span>·</span>
+            <span className={c.dono?corDono:"text-gf-amber-600"}>{c.dono||"sem dono"}</span>
+          </div>
+        </div>
+        <div className="shrink-0 text-right">
+          <div className="text-[13px] font-semibold tabular-nums text-gf-text">{fmtBRL(c.valorParcela)}</div>
+          <div className="text-[10px] text-gf-text-muted">por mês</div>
+        </div>
+      </div>
+
+      <div className="mt-2.5 grid grid-cols-3 gap-2 border-t border-gf-border-soft pt-2.5 text-center">
+        <div>
+          <div className="text-[12px] font-semibold tabular-nums text-gf-text">
+            {String(c.proximaNum).padStart(2,"0")}/{String(c.parcelaTotal).padStart(2,"0")}
+          </div>
+          <div className="text-[10px] text-gf-text-muted">próxima</div>
+        </div>
+        <div>
+          <div className="text-[12px] font-semibold tabular-nums text-gf-text">{c.restantes}×</div>
+          <div className="text-[10px] text-gf-text-muted">restam</div>
+        </div>
+        <div>
+          <div className="text-[12px] font-semibold tabular-nums text-gf-text">{fmtBRL(c.falta)}</div>
+          <div className="text-[10px] text-gf-text-muted">falta</div>
+        </div>
+      </div>
+
+      <div className="mt-2 flex justify-end">
+        {c.terminaEsteMes
+          ?<Badge color="ok">termina {mesLabelCurto(c.mesFinal)}</Badge>
+          :<span className="text-[10px] text-gf-text-muted">termina {mesLabelCurto(c.mesFinal)}</span>}
+      </div>
+    </div>
+  );
+}
+
 function PainelParcelas({proj,mesRef,isMobile,onVerMes}){
   const{compras,porMes,terminando,totalFalta,totalMesBase}=proj;
-  const [sort,toggleSort]=useSort();
+  const [sort,toggleSort,definirSort]=useSort();
   const comprasOrd=ordenarLinhas(compras,sort,ACESSORES_COMPRAS);
   const pico=Math.max(...porMes.map(m=>m.total),1);
   const mesesComAlgo=porMes.filter(m=>m.total>0);
@@ -1306,6 +1552,14 @@ function PainelParcelas({proj,mesRef,isMobile,onVerMes}){
 
       <div style={card}>
         <SectionLabel>Compras em andamento</SectionLabel>
+        {isMobile?(
+          <>
+            <BarraOrdenacao cols={COLS_COMPRAS} sort={sort} definir={definirSort}/>
+            <div className="grid gap-2">
+              {comprasOrd.map(c=><CardCompra key={c.chave} c={c}/>)}
+            </div>
+          </>
+        ):(
         <div style={{overflowX:"auto"}}>
           <table style={{width:"100%",fontSize:12,borderCollapse:"collapse",minWidth:640}}>
             <Thead cols={COLS_COMPRAS} sort={sort} toggle={toggleSort}/>
@@ -1342,6 +1596,7 @@ function PainelParcelas({proj,mesRef,isMobile,onVerMes}){
             ))}</tbody>
           </table>
         </div>
+        )}
       </div>
     </div>
   );
@@ -1358,7 +1613,7 @@ const COLS_DICT=["Padrão","Dono","Classificação","Obs","Usos",""];
 function PainelConfig({dict,onDict,pessoas,onPessoas,usoDoDict,isMobile}){
   const [nova,setNova]=useState("");
   const [filtroDict,setFiltroDict]=useState("");
-  const [sort,toggleSort]=useSort();
+  const [sort,toggleSort,definirSort]=useSort();
   // "Usos" depende de usoDoDict, então o mapa se monta aqui e não no módulo.
   const acessoresDict={
     "Padrão":d=>d.key,"Dono":d=>d.dono,"Classificação":d=>d.parcelas,
@@ -1424,8 +1679,42 @@ function PainelConfig({dict,onDict,pessoas,onPessoas,usoDoDict,isMobile}){
         </p>
         {dict.length===0
           ?<EmptyState icon="🧠">Vazio. Use “Aprender” na fatura para ensinar.</EmptyState>
-          :<div style={{overflowX:"auto"}}>
-            <table style={{width:"100%",fontSize:12,borderCollapse:"collapse",minWidth:isMobile?460:520}}>
+          :isMobile?(
+            <>
+              <BarraOrdenacao cols={COLS_DICT} sort={sort} definir={definirSort}/>
+              <div className="grid gap-2">
+                {visiveis.map((d,i)=>{
+                  const idx=dict.indexOf(d);
+                  const upd=(campo,v)=>onDict(dict.map((x,j)=>j===idx?{...x,[campo]:v}:x));
+                  const usos=usoDoDict[d.key]||0;
+                  return(
+                    <CardForm key={d.key+i}
+                      onRemover={()=>onDict(dict.filter((_,j)=>j!==idx))}
+                      rodape={<span className={usos?undefined:"text-gf-amber-600"}>
+                        {usos} uso{usos===1?"":"s"}
+                      </span>}>
+                      <CampoCard label="Padrão" largo>
+                        <input value={d.key} onChange={e=>upd("key",e.target.value)}
+                          style={{...inpM,fontFamily:"ui-monospace,monospace"}}/>
+                      </CampoCard>
+                      <CampoCard label="Dono">
+                        <DonoSelect value={d.dono} pessoas={pessoas} width="100%"
+                          onChange={v=>upd("dono",v)} style={{minHeight:40}}/>
+                      </CampoCard>
+                      <CampoCard label="Classificação">
+                        <select value={d.parcelas} onChange={e=>upd("parcelas",e.target.value)}
+                          style={selM}>{PARC_OPTS.map(o=><option key={o}>{o}</option>)}</select>
+                      </CampoCard>
+                      <CampoCard label="Obs" largo>
+                        <input value={d.obs||""} onChange={e=>upd("obs",e.target.value)} style={inpM}/>
+                      </CampoCard>
+                    </CardForm>
+                  );
+                })}
+              </div>
+            </>
+          ):<div style={{overflowX:"auto"}}>
+            <table style={{width:"100%",fontSize:12,borderCollapse:"collapse",minWidth:520}}>
               <Thead cols={COLS_DICT} sort={sort} toggle={toggleSort}/>
               <tbody>{visiveis.map((d,i)=>{
                 const idx=dict.indexOf(d);
@@ -1677,10 +1966,10 @@ export default function App(){
   // Ordenação das tabelas que moram direto no App (as demais têm o hook no
   // próprio componente). Uma por tabela, para ordenar Contas não mexer em
   // Investimentos.
-  const [sortManual,toggleManual]=useSort();
-  const [sortContas,toggleContas]=useSort();
-  const [sortInvest,toggleInvest]=useSort();
-  const [sortParcMes,toggleParcMes]=useSort();
+  const [sortManual,toggleManual,definirManual]=useSort();
+  const [sortContas,toggleContas,definirContas]=useSort();
+  const [sortInvest,toggleInvest,definirInvest]=useSort();
+  const [sortParcMes,toggleParcMes,definirParcMes]=useSort();
   // Terceiros que usam o cartão. Cadastro reutilizável, para o mesmo nome
   // escrito de duas formas não virar duas pessoas nos totais.
   const [pessoas,setPessoas]=useState([]);
@@ -2348,6 +2637,34 @@ export default function App(){
             {parcelaMes.qtd} parcela{parcelaMes.qtd===1?"":"s"} · total {fmtBRL(parcelaMes.total)}
             {parcelaMes.projetado>0&&<> · {fmtBRL(parcelaMes.projetado)} ainda projetado</>}
           </p>
+          {isMobile?(
+            <>
+              <BarraOrdenacao cols={COLS_PARC_MES} sort={sortParcMes} definir={definirParcMes}/>
+              <div className="grid gap-2">
+                {ordenarLinhas(parcelaMes.itens,sortParcMes,ACESSORES_PARC_MES).map(pp=>(
+                  <div key={pp.chave+pp.num}
+                    className="flex items-start gap-2.5 rounded-xl border border-gf-border-soft bg-gf-surface-alt p-3">
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-[13px] font-medium text-gf-text">{pp.nome}</div>
+                      <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-[10px] text-gf-text-muted">
+                        <span>{pp.cartao}</span>
+                        <span>·</span>
+                        <span className="tabular-nums">
+                          {String(pp.num).padStart(2,"0")}/{String(pp.total).padStart(2,"0")}
+                        </span>
+                      </div>
+                      <div className="mt-1.5">
+                        {pp.projetada?<Badge color="info">projetada</Badge>:<Badge color="ok">na fatura</Badge>}
+                      </div>
+                    </div>
+                    <span className="shrink-0 text-[13px] font-semibold tabular-nums text-gf-text">
+                      {fmtBRL(pp.valor)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </>
+          ):(
           <div style={{overflowX:"auto"}}>
             <table style={{width:"100%",fontSize:12,borderCollapse:"collapse",minWidth:420}}>
               <Thead cols={COLS_PARC_MES} sort={sortParcMes} toggle={toggleParcMes}/>
@@ -2366,6 +2683,7 @@ export default function App(){
               ))}</tbody>
             </table>
           </div>
+          )}
         </Modal>
       )}
 
@@ -2492,7 +2810,44 @@ export default function App(){
                 {showCopy&&<Modal onClose={()=>setShowCopy(false)}><CopyMesModal dadosMes={dadosMes} mesRef={mesRef} onClose={()=>setShowCopy(false)} onImport={handleCopyImport}/></Modal>}
                 {manual.length===0
                   ?<EmptyState icon="💳">Nenhum lançamento manual. Clique em “+ Adicionar”.</EmptyState>
-                  :<div style={{overflowX:"auto"}}><table style={{width:"100%",fontSize:12,borderCollapse:"collapse",minWidth:540}}>
+                  :isMobile?(
+                    <>
+                      <BarraOrdenacao cols={COLS_MANUAL} sort={sortManual} definir={definirManual}/>
+                      <div className="grid gap-2">
+                        {ordenarLinhas(manual,sortManual,ACESSORES_MANUAL).map(r=>(
+                          <CardForm key={r.id} onRemover={()=>setConfirmar({titulo:"Remover lançamento?",texto:`“${r.nome||"(sem descrição)"}” será removido de ${mesLabel(mesRef)}.`,onConfirm:()=>rmM(r.id)})}>
+                            <CampoCard label="Descrição" largo>
+                              <input value={r.nome} placeholder="Descrição"
+                                onChange={e=>updM(r.id,"nome",e.target.value)} style={inpM}/>
+                            </CampoCard>
+                            <CampoCard label="Data">
+                              <input value={r.data} placeholder="dd/mm" inputMode="numeric"
+                                onChange={e=>updM(r.id,"data",e.target.value)} style={inpM}/>
+                            </CampoCard>
+                            <CampoCard label="Valor">
+                              <input value={r.valor||""} type="number" step="0.01" inputMode="decimal"
+                                onChange={e=>updM(r.id,"valor",parseFloat(e.target.value)||0)} style={inpM}/>
+                            </CampoCard>
+                            <CampoCard label="Cartão">
+                              <input value={r.cartao} placeholder="Nubank…"
+                                onChange={e=>updM(r.id,"cartao",e.target.value)} style={inpM}/>
+                            </CampoCard>
+                            <CampoCard label="Dono">
+                              <DonoSelect value={r.dono} pessoas={pessoas} width="100%"
+                                onChange={v=>updM(r.id,"dono",v)} style={{minHeight:40}}/>
+                            </CampoCard>
+                            <CampoCard label="Classificação" largo>
+                              <select value={r.parcelas} onChange={e=>updM(r.id,"parcelas",e.target.value)}
+                                style={selM}>{PARC_OPTS.map(d=><option key={d}>{d}</option>)}</select>
+                            </CampoCard>
+                            <CampoCard label="Obs" largo>
+                              <input value={r.obs} onChange={e=>updM(r.id,"obs",e.target.value)} style={inpM}/>
+                            </CampoCard>
+                          </CardForm>
+                        ))}
+                      </div>
+                    </>
+                  ):<div style={{overflowX:"auto"}}><table style={{width:"100%",fontSize:12,borderCollapse:"collapse",minWidth:540}}>
                     <Thead cols={COLS_MANUAL} sort={sortManual} toggle={toggleManual}/>
                     <tbody>{ordenarLinhas(manual,sortManual,ACESSORES_MANUAL).map(r=>(
                       <tr key={r.id}>
@@ -2537,7 +2892,36 @@ export default function App(){
             {showCopy&&<Modal onClose={()=>setShowCopy(false)}><CopyMesModal dadosMes={dadosMes} mesRef={mesRef} onClose={()=>setShowCopy(false)} onImport={handleCopyImport}/></Modal>}
             {contas.length===0
               ?<EmptyState icon="🏠">Nenhuma conta lançada em {mesLabel(mesRef)}.</EmptyState>
-              :<div style={{overflowX:"auto"}}><table style={{width:"100%",fontSize:12,borderCollapse:"collapse",minWidth:440}}>
+              :isMobile?(
+                <>
+                  <BarraOrdenacao cols={COLS_CONTAS} sort={sortContas} definir={definirContas}/>
+                  <div className="grid gap-2">
+                    {ordenarLinhas(contas,sortContas,ACESSORES_CONTAS).map(r=>(
+                      <CardForm key={r.id} onRemover={()=>setConfirmar({titulo:"Remover conta?",texto:`“${r.transacao||"(sem descrição)"}” será removida de ${mesLabel(mesRef)}.`,onConfirm:()=>rmC(r.id)})}>
+                        <CampoCard label="Transação" largo>
+                          <input value={r.transacao} onChange={e=>updC(r.id,"transacao",e.target.value)} style={inpM}/>
+                        </CampoCard>
+                        <CampoCard label="Valor (R$)">
+                          {/* inputMode decimal: abre o teclado numérico do celular. */}
+                          <input value={r.valor} inputMode="decimal" placeholder="0,00"
+                            onChange={e=>updC(r.id,"valor",e.target.value)} style={inpM}/>
+                        </CampoCard>
+                        <CampoCard label="Dono">
+                          <DonoSelect value={r.dono} pessoas={pessoas} width="100%"
+                            onChange={v=>updC(r.id,"dono",v)} style={{minHeight:40}}/>
+                        </CampoCard>
+                        <CampoCard label="Tipo" largo>
+                          <select value={r.tipo} onChange={e=>updC(r.id,"tipo",e.target.value)}
+                            style={selM}>{TIPOS_CONTA.map(d=><option key={d}>{d}</option>)}</select>
+                        </CampoCard>
+                        <CampoCard label="Obs" largo>
+                          <input value={r.obs} onChange={e=>updC(r.id,"obs",e.target.value)} style={inpM}/>
+                        </CampoCard>
+                      </CardForm>
+                    ))}
+                  </div>
+                </>
+              ):<div style={{overflowX:"auto"}}><table style={{width:"100%",fontSize:12,borderCollapse:"collapse",minWidth:440}}>
                 <Thead cols={COLS_CONTAS} sort={sortContas} toggle={toggleContas}/>
                 <tbody>{ordenarLinhas(contas,sortContas,ACESSORES_CONTAS).map(r=>(
                   <tr key={r.id}>
@@ -2567,7 +2951,32 @@ export default function App(){
             {showCopy&&<Modal onClose={()=>setShowCopy(false)}><CopyMesModal dadosMes={dadosMes} mesRef={mesRef} onClose={()=>setShowCopy(false)} onImport={handleCopyImport}/></Modal>}
             {invest.length===0
               ?<EmptyState icon="📈">Nenhum aporte em {mesLabel(mesRef)}.</EmptyState>
-              :<div style={{overflowX:"auto"}}><table style={{width:"100%",fontSize:12,borderCollapse:"collapse",minWidth:440}}>
+              :isMobile?(
+                <>
+                  <BarraOrdenacao cols={COLS_INVEST} sort={sortInvest} definir={definirInvest}/>
+                  <div className="grid gap-2">
+                    {ordenarLinhas(invest,sortInvest,ACESSORES_INVEST).map(r=>(
+                      <CardForm key={r.id} onRemover={()=>setConfirmar({titulo:"Remover investimento?",texto:`“${r.descricao||"(sem descrição)"}” será removido de ${mesLabel(mesRef)}.`,onConfirm:()=>rmI(r.id)})}>
+                        <CampoCard label="Descrição" largo>
+                          <input value={r.descricao} onChange={e=>updI(r.id,"descricao",e.target.value)} style={inpM}/>
+                        </CampoCard>
+                        <CampoCard label="Valor (R$)">
+                          <input value={r.valor} inputMode="decimal" placeholder="0,00"
+                            onChange={e=>updI(r.id,"valor",e.target.value)} style={inpM}/>
+                        </CampoCard>
+                        <CampoCard label="Dono">
+                          <DonoSelect value={r.dono} pessoas={pessoas} width="100%"
+                            onChange={v=>updI(r.id,"dono",v)} style={{minHeight:40}}/>
+                        </CampoCard>
+                        <CampoCard label="Onde" largo>
+                          <input value={r.obs} placeholder="CDB, Tesouro…"
+                            onChange={e=>updI(r.id,"obs",e.target.value)} style={inpM}/>
+                        </CampoCard>
+                      </CardForm>
+                    ))}
+                  </div>
+                </>
+              ):<div style={{overflowX:"auto"}}><table style={{width:"100%",fontSize:12,borderCollapse:"collapse",minWidth:440}}>
                 <Thead cols={COLS_INVEST} sort={sortInvest} toggle={toggleInvest}/>
                 <tbody>{ordenarLinhas(invest,sortInvest,ACESSORES_INVEST).map(r=>(
                   <tr key={r.id}>

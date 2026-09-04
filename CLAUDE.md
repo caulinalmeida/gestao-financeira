@@ -354,6 +354,18 @@ Os tokens semânticos do shadcn (`--primary`, `--card`, `--border`…) apontam p
 - **`--primary-foreground` é escuro**, não claro: aqui o primary é o teal vivo.
 - **Os utilitários da paleta levam prefixo `gf-`** (`bg-gf-teal-50`, `text-gf-text-dim`). Não é enfeite: nesta paleta o sufixo `*50` é um fundo **escuro** e o `*600` é a cor viva, o inverso da escala do Tailwind. Sem o prefixo, `bg-amber-50` pareceria creme e pintaria marrom.
 
+### Abaixo de 768px, tabela não existe
+
+As sete tabelas do app têm de 420 a 680px de largura mínima — num aparelho de 390px todas rolavam na horizontal, com os controles de edição nascendo fora da tela. Cada uma tem agora duas formas: `isMobile ? cartões : <table>`. São dois tipos de cartão, e a escolha entre eles é sobre o que a tela faz:
+
+- **`CardFatura`** — compacto, expande ao toque. A fatura é tela de **leitura** (o que é, quanto, de quem); editar é o caso raro. Expande no lugar em vez de abrir gaveta porque `DonoSelect` já abre o próprio modal, e overlay dentro de overlay briga por foco.
+- **`CardForm`** + `CampoCard` — tudo à vista (contas, investimentos, manuais, dicionário). São telas de **digitação**: quem abre já vem para editar, e esconder campo custaria um toque por lançamento.
+- `CardCompra` e as parcelas do mês são só leitura, então mostram tudo aberto.
+
+Use `inpM`/`selM` dentro dos cartões: nas tabelas os campos têm largura fixa em px porque disputam a coluna; no cartão cada um tem a linha inteira, e o padding de 6px vira alvo pequeno demais.
+
+> **Sumiu a tabela, sumiria a ordenação.** Sem cabeçalho não há o que clicar, e ordenar foi pedido explicitamente. `BarraOrdenacao` cobre isso no mobile: fala o mesmo `sort` = `{col,dir}` do `Thead`, mas usa o `definir` do `useSort` — lá coluna e direção são dois controles, e ciclar asc→desc→nenhum num `<select>` confundiria. **Toda tabela nova precisa das duas coisas**, senão a ordenação só existe no desktop.
+
 **O breakpoint mobile é 768px em três lugares e os três têm que concordar:** `md:` do Tailwind (`min-width:768px`), `isMobile` no `App.jsx` (`max-width:767.98px`) e o `@media` do `index.css`. Se divergirem, abre uma faixa de largura em que o CSS já está em modo mobile e o JS ainda acha que é desktop.
 
 ## O que NÃO fazer sem perguntar antes
@@ -371,7 +383,7 @@ Os tokens semânticos do shadcn (`--primary`, `--card`, `--border`…) apontam p
 
 - Otimizar sync para update incremental em vez de clear+append total (importante se o histórico crescer muito)
 - Gráfico de comparativo mês a mês
-- Layout mobile: as tabelas ainda rolam na horizontal — **próxima fase do redesenho**, viram cards abaixo de 768px
+- Checklist repensado para o polegar (última tela ainda não redesenhada para mobile)
 - Ambiente de staging — hoje se edita a planilha de produção direto
 - Total de gastos com tag "Férias/" separado
 - Adicionar a Luanna como segunda usuária de teste no Google Cloud
