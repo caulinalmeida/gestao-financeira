@@ -891,6 +891,24 @@ console.log('=== 17. parseDataHora / horasDesde ===');
     .map(t => t.split('"')[0])
     .filter(c => (' ' + c + ' ').includes(' grid ') && c.includes('gap-'));
   const semCols = listas.filter(c => !c.includes('grid-cols-'));
+  // 18c. Controles de tabela com largura cravada em px.
+  // Mesma familia do 18a/18b: layout que nao sabe encolher. Um <input> de
+  // 140px dentro de um <td> nao tem como ceder espaco -- ou a tabela cabe, ou
+  // vaza pela direita e leva a ultima coluna (a dos botoes) para fora da tela.
+  // Em % ela distribui o que tem; o minWidth no td e' o piso.
+  const rigidos = [];
+  ['inp,width:', 'sel,width:'].forEach(pref => {
+    src.split(pref).slice(1).forEach(t => {
+      if (t[0] >= '0' && t[0] <= '9') rigidos.push(pref + parseInt(t, 10));
+    });
+  });
+  src.split('<DonoSelect').slice(1).forEach(t => {
+    const m = t.slice(0, 200).match(/width=[{](\d+)[}]/);
+    if (m) rigidos.push('DonoSelect width=' + m[1]);
+  });
+  ok('nenhum controle de tabela com largura cravada em px',
+     rigidos.length === 0, rigidos.join(' | '));
+
   ok('toda lista `grid ... gap-*` declara grid-cols',
      semCols.length === 0, semCols.join(' | '));
   ok('as listas de cartoes existem e foram conferidas', listas.length >= 5,

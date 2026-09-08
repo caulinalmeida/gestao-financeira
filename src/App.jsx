@@ -1436,22 +1436,24 @@ function TabelaFatura({titulo,subtitulo,linhas,isMobile,pessoas,filtro,setFiltro
                   <td style={{...td,color:C.textDim,whiteSpace:"nowrap",fontSize:"var(--fs-meta)"}}>{r.cartao||"—"}</td>
                   <td style={{...td,fontWeight:600,fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap",
                     color:r.valor<0?C.green600:C.text}}>{fmtBRL(r.valor)}</td>
-                  <td style={td}>
-                    <DonoSelect value={r.dono} pessoas={pessoas} width={104}
+                  <td style={{...td,minWidth:96}}>
+                    <DonoSelect value={r.dono} pessoas={pessoas} width="100%"
                       onChange={v=>leg?onLegado(r.id,"dono",v):onCampo(r,"dono",v)}
                       style={{opacity:pag?0.4:1,borderColor:!r.dono&&!pag?C.amber100:C.border}}/>
                   </td>
-                  <td style={td}>
+                  <td style={{...td,minWidth:96}}>
                     <select value={r.parcelas} disabled={pag}
                       onChange={e=>leg?onLegado(r.id,"parcelas",e.target.value):onCampo(r,"classificacao",e.target.value)}
-                      style={{...sel,width:100,opacity:pag?0.4:1}}>{PARC_OPTS.map(d=><option key={d}>{d}</option>)}</select>
+                      style={{...sel,width:"100%",opacity:pag?0.4:1}}>{PARC_OPTS.map(d=><option key={d}>{d}</option>)}</select>
                   </td>
-                  <td style={td}>
+                  <td style={{...td,minWidth:76}}>
                     <input value={r.obs} disabled={pag}
                       onChange={e=>leg?onLegado(r.id,"obs",e.target.value):onCampo(r,"obs",e.target.value)}
-                      style={{...inp,width:85,opacity:pag?0.4:1}}/>
+                      style={{...inp,width:"100%",opacity:pag?0.4:1}}/>
                   </td>
-                  <td style={td}><div style={{display:"flex",gap:4}}>
+                  {/* nowrap + wrap nos botoes: o "Aprender" so' aparece em linha
+                      nova quando nao cabe ao lado, em vez de empurrar a coluna. */}
+                  <td style={{...td,whiteSpace:"nowrap"}}><div style={{display:"flex",gap:4,flexWrap:"wrap",justifyContent:"flex-end"}}>
                     {!leg&&r.isNew&&r.dono&&(
                       <Btn small onClick={()=>onAprender(r)} title="Salvar no dicionário"
                         style={{color:C.green600,borderColor:C.green100,background:C.green50}}>Aprender</Btn>
@@ -1806,19 +1808,19 @@ function PainelConfig({dict,onDict,pessoas,onPessoas,usoDoDict,isMobile}){
                   <tr key={d.key+i}>
                     <td style={td}>
                       <input value={d.key} onChange={e=>upd("key",e.target.value)}
-                        style={{...inp,width:150,fontFamily:"ui-monospace,monospace"}}/>
+                        style={{...inp,width:"100%",minWidth:120,fontFamily:"ui-monospace,monospace"}}/>
                     </td>
                     <td style={td}>
-                      <DonoSelect value={d.dono} pessoas={pessoas} width={104}
+                      <DonoSelect value={d.dono} pessoas={pessoas} width="100%"
                         onChange={v=>upd("dono",v)}/>
                     </td>
                     <td style={td}>
                       <select value={d.parcelas} onChange={e=>upd("parcelas",e.target.value)}
-                        style={{...sel,width:104}}>{PARC_OPTS.map(o=><option key={o}>{o}</option>)}</select>
+                        style={{...sel,width:"100%",minWidth:96}}>{PARC_OPTS.map(o=><option key={o}>{o}</option>)}</select>
                     </td>
                     <td style={td}>
                       <input value={d.obs||""} onChange={e=>upd("obs",e.target.value)}
-                        style={{...inp,width:100}}/>
+                        style={{...inp,width:"100%",minWidth:80}}/>
                     </td>
                     <td style={{...td,color:usoDoDict[d.key]?C.textDim:C.amber600,
                       whiteSpace:"nowrap"}}>
@@ -2804,7 +2806,7 @@ export default function App(){
 
       {/* O padding inferior no mobile precisa vencer a barra fixa (56px) mais a
           safe area do iPhone, senao a ultima linha de cada tela fica embaixo dela. */}
-      <div className="mx-auto max-w-[960px] px-3 pt-4 pb-[calc(env(safe-area-inset-bottom)+84px)] md:px-4 md:pt-6 md:pb-10">
+      <div className="mx-auto max-w-[1160px] px-3 pt-4 pb-[calc(env(safe-area-inset-bottom)+84px)] md:px-4 md:pt-6 md:pb-10">
 
         {/* Nav tabs — so' no desktop; no mobile a navegação vive na barra inferior */}
         <div className="mb-5 hidden gap-1 rounded-xl border border-gf-border-soft bg-gf-surface p-1 md:flex">
@@ -2935,13 +2937,13 @@ export default function App(){
                     <Thead cols={COLS_MANUAL} sort={sortManual} toggle={toggleManual}/>
                     <tbody>{ordenarLinhas(manual,sortManual,ACESSORES_MANUAL).map(r=>(
                       <tr key={r.id}>
-                        <td style={td}><input value={r.data} onChange={e=>updM(r.id,"data",e.target.value)} placeholder="dd/mm" style={{...inp,width:65}}/></td>
-                        <td style={td}><input value={r.nome} onChange={e=>updM(r.id,"nome",e.target.value)} placeholder="Descrição" style={{...inp,width:110}}/></td>
-                        <td style={td}><input value={r.valor||""} onChange={e=>updM(r.id,"valor",parseFloat(e.target.value)||0)} type="number" step="0.01" style={{...inp,width:70}}/></td>
-                        <td style={td}><input value={r.cartao} onChange={e=>updM(r.id,"cartao",e.target.value)} placeholder="Nubank…" style={{...inp,width:80}}/></td>
-                        <td style={td}><DonoSelect value={r.dono} pessoas={pessoas} width={96} onChange={v=>updM(r.id,"dono",v)}/></td>
-                        <td style={td}><select value={r.parcelas} onChange={e=>updM(r.id,"parcelas",e.target.value)} style={{...sel,width:98}}>{PARC_OPTS.map(d=><option key={d}>{d}</option>)}</select></td>
-                        <td style={td}><input value={r.obs} onChange={e=>updM(r.id,"obs",e.target.value)} style={{...inp,width:80}}/></td>
+                        <td style={td}><input value={r.data} onChange={e=>updM(r.id,"data",e.target.value)} placeholder="dd/mm" style={{...inp,width:"100%",minWidth:58}}/></td>
+                        <td style={td}><input value={r.nome} onChange={e=>updM(r.id,"nome",e.target.value)} placeholder="Descrição" style={{...inp,width:"100%",minWidth:96}}/></td>
+                        <td style={td}><input value={r.valor||""} onChange={e=>updM(r.id,"valor",parseFloat(e.target.value)||0)} type="number" step="0.01" style={{...inp,width:"100%",minWidth:66}}/></td>
+                        <td style={td}><input value={r.cartao} onChange={e=>updM(r.id,"cartao",e.target.value)} placeholder="Nubank…" style={{...inp,width:"100%",minWidth:72}}/></td>
+                        <td style={td}><DonoSelect value={r.dono} pessoas={pessoas} width="100%" onChange={v=>updM(r.id,"dono",v)}/></td>
+                        <td style={td}><select value={r.parcelas} onChange={e=>updM(r.id,"parcelas",e.target.value)} style={{...sel,width:"100%",minWidth:96}}>{PARC_OPTS.map(d=><option key={d}>{d}</option>)}</select></td>
+                        <td style={td}><input value={r.obs} onChange={e=>updM(r.id,"obs",e.target.value)} style={{...inp,width:"100%",minWidth:72}}/></td>
                         <td style={td}><Btn danger small title="Remover" onClick={()=>setConfirmar({titulo:"Remover lançamento?",texto:`“${r.nome||"(sem descrição)"}” será removido de ${mesLabel(mesRef)}.`,onConfirm:()=>rmM(r.id)})}>✕</Btn></td>
                       </tr>
                     ))}</tbody>
@@ -3006,11 +3008,11 @@ export default function App(){
                 <Thead cols={COLS_CONTAS} sort={sortContas} toggle={toggleContas}/>
                 <tbody>{ordenarLinhas(contas,sortContas,ACESSORES_CONTAS).map(r=>(
                   <tr key={r.id}>
-                    <td style={td}><input value={r.transacao} onChange={e=>updC(r.id,"transacao",e.target.value)} style={{...inp,width:140}}/></td>
-                    <td style={td}><input value={r.valor} onChange={e=>updC(r.id,"valor",e.target.value)} placeholder="0,00" style={{...inp,width:85}}/></td>
-                    <td style={td}><DonoSelect value={r.dono} pessoas={pessoas} width={100} onChange={v=>updC(r.id,"dono",v)}/></td>
-                    <td style={td}><select value={r.tipo} onChange={e=>updC(r.id,"tipo",e.target.value)} style={{...sel,width:115}}>{TIPOS_CONTA.map(d=><option key={d}>{d}</option>)}</select></td>
-                    <td style={td}><input value={r.obs} onChange={e=>updC(r.id,"obs",e.target.value)} style={{...inp,width:95}}/></td>
+                    <td style={td}><input value={r.transacao} onChange={e=>updC(r.id,"transacao",e.target.value)} style={{...inp,width:"100%",minWidth:120}}/></td>
+                    <td style={td}><input value={r.valor} onChange={e=>updC(r.id,"valor",e.target.value)} inputMode="decimal" placeholder="0,00" style={{...inp,width:"100%",minWidth:78}}/></td>
+                    <td style={td}><DonoSelect value={r.dono} pessoas={pessoas} width="100%" onChange={v=>updC(r.id,"dono",v)}/></td>
+                    <td style={td}><select value={r.tipo} onChange={e=>updC(r.id,"tipo",e.target.value)} style={{...sel,width:"100%",minWidth:110}}>{TIPOS_CONTA.map(d=><option key={d}>{d}</option>)}</select></td>
+                    <td style={td}><input value={r.obs} onChange={e=>updC(r.id,"obs",e.target.value)} style={{...inp,width:"100%",minWidth:84}}/></td>
                     <td style={td}><Btn danger small title="Remover" onClick={()=>setConfirmar({titulo:"Remover conta?",texto:`“${r.transacao||"(sem descrição)"}” será removida de ${mesLabel(mesRef)}.`,onConfirm:()=>rmC(r.id)})}>✕</Btn></td>
                   </tr>
                 ))}</tbody>
@@ -3058,10 +3060,10 @@ export default function App(){
                 <Thead cols={COLS_INVEST} sort={sortInvest} toggle={toggleInvest}/>
                 <tbody>{ordenarLinhas(invest,sortInvest,ACESSORES_INVEST).map(r=>(
                   <tr key={r.id}>
-                    <td style={td}><input value={r.descricao} onChange={e=>updI(r.id,"descricao",e.target.value)} style={{...inp,width:140}}/></td>
-                    <td style={td}><input value={r.valor} onChange={e=>updI(r.id,"valor",e.target.value)} placeholder="0,00" style={{...inp,width:85}}/></td>
-                    <td style={td}><DonoSelect value={r.dono} pessoas={pessoas} width={100} onChange={v=>updI(r.id,"dono",v)}/></td>
-                    <td style={td}><input value={r.obs} onChange={e=>updI(r.id,"obs",e.target.value)} placeholder="CDB, Tesouro…" style={{...inp,width:130}}/></td>
+                    <td style={td}><input value={r.descricao} onChange={e=>updI(r.id,"descricao",e.target.value)} style={{...inp,width:"100%",minWidth:120}}/></td>
+                    <td style={td}><input value={r.valor} onChange={e=>updI(r.id,"valor",e.target.value)} inputMode="decimal" placeholder="0,00" style={{...inp,width:"100%",minWidth:78}}/></td>
+                    <td style={td}><DonoSelect value={r.dono} pessoas={pessoas} width="100%" onChange={v=>updI(r.id,"dono",v)}/></td>
+                    <td style={td}><input value={r.obs} onChange={e=>updI(r.id,"obs",e.target.value)} placeholder="CDB, Tesouro…" style={{...inp,width:"100%",minWidth:110}}/></td>
                     <td style={td}><Btn danger small title="Remover" onClick={()=>setConfirmar({titulo:"Remover investimento?",texto:`“${r.descricao||"(sem descrição)"}” será removido de ${mesLabel(mesRef)}.`,onConfirm:()=>rmI(r.id)})}>✕</Btn></td>
                   </tr>
                 ))}</tbody>
