@@ -1018,9 +1018,14 @@ function Modal({onClose,children,wide}){
 }
 
 function tempoRelativo(iso){
-  const t=new Date(iso).getTime();
-  if(isNaN(t)) return "";
-  const min=Math.round((Date.now()-t)/60000);
+  // parseDataHora, nao new Date(): a correcao dos "149d" passou por horasDesde
+  // e esqueceu daqui — e e' AQUI que o texto da tela e' escrito. O sintoma
+  // voltou como "Sincronizado ha 31d" ao lado de "banco lido ha 3 min", os dois
+  // na mesma barra, porque pluggy_atualizado_em chega em ISO e ultimo_sync
+  // chega como "08/09/2026 14:02:11" — que o new Date() le como 9 de AGOSTO.
+  const d=parseDataHora(iso);
+  if(!d) return "";
+  const min=Math.round((Date.now()-d.getTime())/60000);
   if(min<1) return "agora";
   if(min<60) return `há ${min} min`;
   const h=Math.round(min/60);

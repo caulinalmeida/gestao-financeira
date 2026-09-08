@@ -52,7 +52,7 @@ const alvos = [
   'function cmpValor(', 'function ordenarLinhas(', 'function chaveData(',
   'function diaDoCartao(', 'function mesAtualKey(',
   'function faturasPendentesDoBanco(',
-  'function parseDataHora(', 'function horasDesde(',
+  'function parseDataHora(', 'function horasDesde(', 'function tempoRelativo(',
 ];
 const pedacos = [];
 let faltou = [];
@@ -839,6 +839,17 @@ console.log('=== 17. parseDataHora / horasDesde ===');
              String(umaHoraAtras.getSeconds()).padStart(2, '0');
   ok('a mesma hora no formato do Sheets dá a mesma idade',
      Math.abs(HD(br) - 1) < 0.02);
+
+  // tempoRelativo e horasDesde têm que CONCORDAR. Foi exatamente aqui que o
+  // bug voltou: a correção dos "149d" passou por horasDesde e esqueceu de
+  // tempoRelativo, que é quem escreve o texto da tela. O sintoma reapareceu
+  // como "Sincronizado há 31d" ao lado de "banco lido há 3 min".
+  const TR = ctx.tempoRelativo;
+  eq('tempoRelativo entende o formato do Sheets', TR(br), 'há 1h');
+  eq('e concorda com o ISO do mesmo instante', TR(umaHoraAtras.toISOString()), 'há 1h');
+  ok('nenhuma das duas funções cai em "dias" para uma hora atrás',
+     TR(br).indexOf('d') === -1 && Math.abs(HD(br)) < 2, TR(br));
+  eq('lixo vira string vazia, não "NaN"', TR('nunca'), '');
 }
 
 // -- 18. Layout: o piso de min-content -----------------------------------

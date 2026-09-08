@@ -109,7 +109,7 @@ function investigarFaturaSumida() {
         porMes[m.mes] = (porMes[m.mes] || 0) + 1;
 
         var estado;
-        if (_antesDoPiso(m.mes)) { estado = '⛔ CORTADA PELO PISO'; cortadas.push(tx); }
+        if (_antesDoPiso(m.mes)) { estado = '⛔ CORTADA PELO PISO'; cortadas.push({ tx: tx, mes: m.mes, origem: m.origem }); }
         else if (!existe) { estado = '❌ NÃO ESTÁ NA PLANILHA'; faltando.push(tx); }
         else if (_mesRefTexto(existe[iMes]) !== m.mes) {
           estado = '⚠️ planilha diz ' + _mesRefTexto(existe[iMes]);
@@ -170,10 +170,34 @@ function investigarFaturaSumida() {
 
       p('   ═══ VEREDITO ═══');
       if (cortadas.length) {
-        p('   ⛔ ' + cortadas.length + ' transação(ões) CORTADAS PELO PISO MES_MINIMO=' + MES_MINIMO);
-        p('      O Pluggy tem e nós descartamos na gravação, por caírem em mês');
-        p('      anterior ao piso. Se pertencem à fatura atual, o mês derivado');
-        p('      está errado — veja a coluna "regra" acima.');
+        // Cortar pelo piso e' o TRABALHO do piso, nao um defeito. O que separa
+        // rotina de problema e' a regra que derivou o mes: BILL vem do dueDate
+        // da fatura do proprio banco, entao mes abaixo do piso ali e' fato
+        // historico. CICLO e FORECAST sao deducao nossa, e uma deducao errada
+        // jogaria uma compra da fatura ATUAL para debaixo do piso, onde ela
+        // sumiria em silencio. So' essa segunda hipotese merece alarme.
+        var porBill = cortadas.filter(function (c) { return c.origem === 'BILL'; });
+        var deduzidas = cortadas.filter(function (c) { return c.origem !== 'BILL'; });
+
+        if (porBill.length) {
+          p('   ℹ️ ' + porBill.length + ' transação(ões) abaixo do piso MES_MINIMO=' +
+            MES_MINIMO + ' — esperado.');
+          p('      O mês veio da regra BILL, ou seja do vencimento da fatura que o');
+          p('      próprio banco informou. São faturas antigas, e o piso existe');
+          p('      justamente para elas não voltarem a cada sync. Nada a fazer.');
+        }
+        if (deduzidas.length) {
+          p('   ⚠️ ' + deduzidas.length + ' transação(ões) cortadas pelo piso com mês DEDUZIDO');
+          p('      (regra ' + deduzidas.map(function (c) { return c.origem; })
+            .filter(function (v, i, a) { return a.indexOf(v) === i; }).join('/') + ', não BILL).');
+          p('      Aqui vale conferir: se alguma pertence à fatura atual, o mês');
+          p('      derivado está errado e ela sumiu sem aviso. Veja a coluna "regra".');
+          deduzidas.slice(0, 8).forEach(function (c) {
+            p('        ' + _isoData(new Date(c.tx.date)) + '  ' + c.mes + '  ' + c.origem +
+              '  ' + Number(c.tx.amount || 0).toFixed(2) + '  ' +
+              String(c.tx.description || '').slice(0, 34));
+          });
+        }
       }
       if (faltando.length) {
         p('   ❌ ' + faltando.length + ' transação(ões) que o Pluggy TEM e nós NÃO gravamos.');
@@ -187,7 +211,8 @@ function investigarFaturaSumida() {
         p('      o billId passou a existir. NÃO sumiram: estão no outro mês.');
         p('      sincronizarAgora() realinha.');
       }
-      if (!cortadas.length && !faltando.length && !divergindo.length) {
+      if (!cortadas.some(function (c) { return c.origem !== 'BILL'; }) &&
+          !faltando.length && !divergindo.length) {
         p('   ✅ Tudo que o Pluggy entregou está gravado, no mês que a regra manda.');
         p('      Se ainda falta compra na tela, ela não chegou ao Pluggy (causa A):');
         p('      confira a última visita com diagnosticoOpenFinance().');
