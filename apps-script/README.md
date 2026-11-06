@@ -70,8 +70,10 @@ A coluna `origem_mes` registra qual regra foi usada, o que torna o QA possível:
 | `origem_mes` | Regra | Confiança |
 |---|---|---|
 | `BILL` | Transação tem `billId`; usamos o vencimento da fatura | alta |
-| `FORECAST` | `creditCardMetadata.billForecastDate` do Pluggy | alta |
-| `ESTIMADO` | Calculado pelo dia de fechamento do cartão | média |
+| `ABERTA` | `PENDING` sem `billId` cuja fatura pela data já fechou → a seguinte | alta |
+| `AGENDADA` | Parcela futura, datada com o vencimento | média |
+| `CICLO` | Calculado pelo dia de fechamento do cartão | média |
+| `FORECAST` | `creditCardMetadata.billForecastDate` do Pluggy | baixa |
 
 Se aparecer muito `ESTIMADO`, vale investigar — significa que o conector não
 está entregando `billId` nem previsão.

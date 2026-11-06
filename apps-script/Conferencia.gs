@@ -30,7 +30,8 @@ function _contasComContexto() {
         faturas: faturas,
         mapaFaturas: mapa,
         diaFech: _diaFechamento(c.creditData || {}, faturas),
-        diaVenc: _diaVencimento(c.creditData || {}, faturas)
+        diaVenc: _diaVencimento(c.creditData || {}, faturas),
+        mesFechada: _mesUltimaFechada(faturas)
       });
     });
   });
@@ -77,16 +78,17 @@ function conferirFatura() {
     // é assim que o banco calcula, e é o que precisa bater.
     var porMes = {};
     txs.forEach(function (t) {
-      var d = _derivarMes(t, ctx.mapaFaturas, ctx.diaFech, ctx.diaVenc);
+      var d = _derivarMes(t, ctx.mapaFaturas, ctx.diaFech, ctx.diaVenc, ctx.mesFechada);
       if (!porMes[d.mes]) {
         porMes[d.mes] = { n: 0, fatura: 0, pagto: 0, pend: 0, post: 0,
-                          bill: 0, ciclo: 0, agend: 0, fore: 0 };
+                          bill: 0, aberta: 0, ciclo: 0, agend: 0, fore: 0 };
       }
       var m = porMes[d.mes], v = Number(t.amount || 0);
       m.n++;
       if (_tipoTransacao(t) === 'PAGAMENTO') m.pagto += v; else m.fatura += v;
       if (t.status === 'PENDING') m.pend++; else m.post++;
       if (d.origem === 'BILL') m.bill++;
+      else if (d.origem === 'ABERTA') m.aberta++;
       else if (d.origem === 'CICLO') m.ciclo++;
       else if (d.origem === 'AGENDADA') m.agend++;
       else m.fore++;
@@ -114,12 +116,13 @@ function conferirFatura() {
         _fmt(m.fatura).padStart(12) + '  ' +
         (temBanco ? _fmt(banco).padStart(12) : '           ?') + '  ' +
         (temBanco ? _fmt(dif).padStart(11) : '          -') + marca +
-        '   B' + m.bill + ' C' + m.ciclo + ' A' + m.agend + ' F' + m.fore);
+        '   B' + m.bill + ' O' + m.aberta + ' C' + m.ciclo + ' A' + m.agend + ' F' + m.fore);
       if (m.pagto) p('              (pagamento recebido: ' + _fmt(m.pagto) + ' — fora do total)');
     });
     p('');
     p('     ✅ = bate com o banco · ⚠️ = divergente · — = fatura ainda não fechada');
-    p('     Regra: B=bill do banco · C=ciclo de fechamento · A=parcela agendada · F=palpite');
+    p('     Regra: B=bill do banco · O=em aberto, fatura pela data já fechou · C=ciclo de fechamento');
+    p('            A=parcela agendada · F=palpite');
     p('     Meses na borda da janela ficam incompletos, é esperado.');
 
     // A virada de fatura é onde erro de mês aparece. Lista o entorno do
@@ -134,7 +137,7 @@ function conferirFatura() {
 
       if (!viradas.length) p('     (nenhuma)');
       viradas.slice(0, 20).forEach(function (t) {
-        var d = _derivarMes(t, ctx.mapaFaturas, ctx.diaFech, ctx.diaVenc);
+        var d = _derivarMes(t, ctx.mapaFaturas, ctx.diaFech, ctx.diaVenc, ctx.mesFechada);
         p('     ' + String(t.date).slice(0, 10) + '  ' +
           String(t.description || '').slice(0, 26).padEnd(26) + ' ' +
           _fmt(t.amount).padStart(12) + '  ' +
@@ -153,7 +156,7 @@ function conferirFatura() {
 
     var pendPorMes = {}, pendEmFechada = 0;
     txs.filter(function (t) { return t.status === 'PENDING'; }).forEach(function (t) {
-      var d = _derivarMes(t, ctx.mapaFaturas, ctx.diaFech, ctx.diaVenc);
+      var d = _derivarMes(t, ctx.mapaFaturas, ctx.diaFech, ctx.diaVenc, ctx.mesFechada);
       pendPorMes[d.mes] = (pendPorMes[d.mes] || 0) + 1;
       if (mesesFechados[d.mes]) pendEmFechada++;
     });
@@ -222,7 +225,7 @@ function investigarMes(mesAlvo) {
     p('   Total segundo o banco: ' + _fmt(fatura.totalAmount));
 
     var txs = pluggyTransacoes(c.id, de, ate).filter(function (t) {
-      return _derivarMes(t, ctx.mapaFaturas, ctx.diaFech, ctx.diaVenc).mes === mesAlvo;
+      return _derivarMes(t, ctx.mapaFaturas, ctx.diaFech, ctx.diaVenc, ctx.mesFechada).mes === mesAlvo;
     });
 
     var compras = 0, pagtos = 0, estornos = 0;
@@ -311,7 +314,7 @@ function conferirFaturaDetalhe(mesAlvo) {
   _contasComContexto().forEach(function (ctx) {
     var c = ctx.conta;
     var txs = pluggyTransacoes(c.id, de, ate).filter(function (t) {
-      return _derivarMes(t, ctx.mapaFaturas, ctx.diaFech, ctx.diaVenc).mes === mesAlvo;
+      return _derivarMes(t, ctx.mapaFaturas, ctx.diaFech, ctx.diaVenc, ctx.mesFechada).mes === mesAlvo;
     }).sort(function (a, b) { return new Date(a.date) - new Date(b.date); });
 
     p('');
@@ -322,7 +325,7 @@ function conferirFaturaDetalhe(mesAlvo) {
     txs.forEach(function (t) {
       var tp = _tipoTransacao(t);
       if (tp !== 'PAGAMENTO') soma += Number(t.amount || 0);
-      var d = _derivarMes(t, ctx.mapaFaturas, ctx.diaFech, ctx.diaVenc);
+      var d = _derivarMes(t, ctx.mapaFaturas, ctx.diaFech, ctx.diaVenc, ctx.mesFechada);
       var mm = t.creditCardMetadata || {};
       var parc = mm.totalInstallments > 1
         ? ' [' + mm.installmentNumber + '/' + mm.totalInstallments + ']' : '';

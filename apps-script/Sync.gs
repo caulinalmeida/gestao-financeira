@@ -109,6 +109,8 @@ function _mesPorCiclo(dataTx, diaFechamento, diaVencimento) {
  * torna o QA possível.
  *
  *   BILL      tem billId e sabemos o vencimento da fatura — autoritativo
+ *   ABERTA    PENDING cuja fatura pela data já fechou sem ela → a seguinte
+ *   AGENDADA  parcela futura, datada com o vencimento
  *   CICLO     calculado pelo dia de fechamento, mesma convenção do BILL
  *   FORECAST  billForecastDate do Pluggy — último recurso
  *
@@ -117,7 +119,63 @@ function _mesPorCiclo(dataTx, diaFechamento, diaVencimento) {
  * Confiar nele misturava duas convenções e jogava as compras em aberto um mês
  * para trás. O ciclo é determinístico e concorda com o banco.
  */
-function _derivarMes(tx, mapaFaturas, diaFechamento, diaVencimento) {
+function _derivarMes(tx, mapaFaturas, diaFechamento, diaVencimento, mesUltimaFechada) {
+  var r = _derivarMesPelaData(tx, mapaFaturas, diaFechamento, diaVencimento);
+  if (r.origem === 'BILL') return r;
+
+  // ABERTA — piso pelo que o BANCO já fechou, não pela data.
+  //
+  // Toda transação de uma fatura fechada vem com `billId`. Se a fatura do mês M
+  // já fechou e esta transação continua PENDING sem `billId`, ela NÃO está na
+  // fatura de M, digam o que disserem a data e o ciclo: está na aberta.
+  //
+  // A data mente perto do fechamento porque o banco aloca pela data de
+  // PROCESSAMENTO, não pela da compra. Caso real (nov/2026, fecha dia 3):
+  // `99Food` de 02/11 — feriado — e `SHOPEE 02/02` datada 30/11 caíram na
+  // fatura de dezembro, e o CICLO mandava as duas para novembro.
+  //
+  // Só PENDING e só sem `billId`: POSTED sem `billId` é anomalia do conector,
+  // e empurrá-la para a frente esconderia a divergência que a conciliação
+  // existe para mostrar. Antes de a fatura fechar não há piso, e vale o ciclo.
+  var meta = tx.creditCardMetadata || {};
+  if (mesUltimaFechada && !meta.billId && tx.status === 'PENDING' && r.mes <= mesUltimaFechada) {
+    return { mes: _mesSeguinte(mesUltimaFechada), origem: 'ABERTA' };
+  }
+  return r;
+}
+
+function _mesSeguinte(mes) {
+  var a = Number(mes.slice(0, 4)), m = Number(mes.slice(5, 7));   // m é 1..12
+  return m === 12 ? _mesKey(a + 1, 0) : _mesKey(a, m);
+}
+
+/**
+ * Mês (do vencimento) da fatura mais recente que o banco JÁ FECHOU.
+ *
+ * O `/bills` do Pluggy só lista fatura fechada; a checagem do `billClosingDate`
+ * é cinto de segurança caso um dia ele passe a listar a aberta também. Se a
+ * fatura fechou mas o Pluggy ainda não a materializou (setembro/2026), ela não
+ * está aqui e o piso fica um mês atrás — o ciclo continua valendo, que é o
+ * comportamento de antes.
+ */
+function _mesUltimaFechada(faturas, agora) {
+  var limite = (agora || new Date()).getTime();
+  var melhor = null;
+  (faturas || []).forEach(function (b) {
+    if (!b || !b.dueDate) return;
+    var dv = new Date(b.dueDate);
+    if (isNaN(dv.getTime())) return;
+    if (b.billClosingDate) {
+      var fc = new Date(b.billClosingDate);
+      if (!isNaN(fc.getTime()) && fc.getTime() > limite) return;   // ainda aberta
+    }
+    var mes = _mesKey(dv.getUTCFullYear(), dv.getUTCMonth());
+    if (!melhor || mes > melhor) melhor = mes;
+  });
+  return melhor;
+}
+
+function _derivarMesPelaData(tx, mapaFaturas, diaFechamento, diaVencimento) {
   var meta = tx.creditCardMetadata || {};
 
   if (meta.billId && mapaFaturas && mapaFaturas[meta.billId]) {
@@ -179,9 +237,9 @@ function _tipoTransacao(tx) {
   return 'COMPRA';
 }
 
-function _mapearTransacao(tx, conta, mapaFaturas, diaFechamento, diaVencimento) {
+function _mapearTransacao(tx, conta, mapaFaturas, diaFechamento, diaVencimento, mesUltimaFechada) {
   var meta = tx.creditCardMetadata || {};
-  var m = _derivarMes(tx, mapaFaturas, diaFechamento, diaVencimento);
+  var m = _derivarMes(tx, mapaFaturas, diaFechamento, diaVencimento, mesUltimaFechada);
   var dataIso = _isoData(new Date(tx.date));
 
   return {
@@ -293,7 +351,7 @@ function testarConexao() {
         var txs = pluggyTransacoes(c.id, de, ate);
         var origens = {}, meses = {}, pend = 0, negativos = 0, parcelados = 0;
         txs.forEach(function (t) {
-          var d = _derivarMes(t, mapa, diaFech);
+          var d = _derivarMes(t, mapa, diaFech, _diaVencimento(cd, faturas), _mesUltimaFechada(faturas));
           origens[d.origem] = (origens[d.origem] || 0) + 1;
           meses[d.mes] = (meses[d.mes] || 0) + 1;
           if (t.status === 'PENDING') pend++;
@@ -465,6 +523,7 @@ function sincronizar(motivo) {
         });
         var diaFech = _diaFechamento(cd, faturas);
         var diaVenc = _diaVencimento(cd, faturas);
+        var mesFechada = _mesUltimaFechada(faturas);
 
         cartoes.push({
           account_id: c.id,
@@ -493,7 +552,7 @@ function sincronizar(motivo) {
         });
 
         pluggyTransacoes(c.id, dataDe, dataAte).forEach(function (tx) {
-          transacoes.push(_mapearTransacao(tx, c, mapaFaturas, diaFech, diaVenc));
+          transacoes.push(_mapearTransacao(tx, c, mapaFaturas, diaFech, diaVenc, mesFechada));
         });
       });
     });

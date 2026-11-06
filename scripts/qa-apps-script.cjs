@@ -157,6 +157,64 @@ r = dm({ date: futuro + 'T00:00:00Z', creditCardMetadata: { billId: 'b9', totalI
        { b9: '2026-09-10T00:00:00Z' }, 3, 10);
 ok('BILL tem precedência sobre AGENDADA', r.origem === 'BILL', JSON.stringify(r));
 
+// Fatura já fechada é piso para tudo que está PENDING sem billId.
+// Ancorado no caso real de nov/2026 (Itaú fecha 3): duas compras que o ciclo
+// mandava para novembro e o banco lançou em dezembro.
+console.log('     -- fatura fechada sem a transação → ela é da aberta --');
+const agoraNov = new Date('2026-11-06T12:00:00Z');
+const faturasNov = [
+  { id: 'out', dueDate: '2026-10-13T00:00:00Z', billClosingDate: '2026-10-03T00:00:00Z' },
+  { id: 'nov', dueDate: '2026-11-10T00:00:00Z', billClosingDate: '2026-11-03T00:00:00Z' }
+];
+const fechada = sandbox._mesUltimaFechada(faturasNov, agoraNov);
+eq('última fechada = novembro', fechada, '2026-11');
+eq('fatura com fechamento no futuro não conta como fechada',
+   sandbox._mesUltimaFechada(faturasNov.concat([{ dueDate: '2026-12-10T00:00:00Z',
+     billClosingDate: '2026-12-03T00:00:00Z' }]), agoraNov), '2026-11');
+eq('sem faturas não há piso', sandbox._mesUltimaFechada([], agoraNov), null);
+eq('virada de ano', sandbox._mesSeguinte('2026-12'), '2027-01');
+
+r = dm({ date: '2026-11-02T00:00:00Z', status: 'PENDING', creditCardMetadata: {} },
+       {}, 3, 10, fechada);
+eq('99Food 02/11 PENDING, novembro já fechou → dezembro', r.mes, '2026-12');
+ok('  e a regra registrada é ABERTA', r.origem === 'ABERTA', JSON.stringify(r));
+
+r = dm({ date: '2026-11-02T00:00:00Z', status: 'PENDING', creditCardMetadata: {} },
+       {}, 3, 10, '2026-10');
+eq('mesma compra antes de novembro fechar → ciclo (novembro)', r.mes, '2026-11');
+ok('  e a regra continua CICLO', r.origem === 'CICLO', JSON.stringify(r));
+
+r = dm({ date: '2026-11-01T00:00:00Z', status: 'POSTED', creditCardMetadata: { billId: 'nov' } },
+       { nov: '2026-11-10T00:00:00Z' }, 3, 10, fechada);
+eq('POSTED com billId da fatura fechada fica nela', r.mes, '2026-11');
+
+r = dm({ date: '2026-11-01T00:00:00Z', status: 'POSTED', creditCardMetadata: {} },
+       {}, 3, 10, fechada);
+eq('POSTED sem billId NÃO é empurrada (a conciliação precisa ver)', r.mes, '2026-11');
+
+r = dm({ date: '2026-11-20T00:00:00Z', status: 'PENDING', creditCardMetadata: {} },
+       {}, 3, 10, fechada);
+ok('compra já acima do piso não muda de regra', r.mes === '2026-12' && r.origem === 'CICLO', JSON.stringify(r));
+
+r = dm({ date: '2027-01-10T00:00:00Z', status: 'PENDING',
+         creditCardMetadata: { totalInstallments: 6, installmentNumber: 4 } }, {}, 3, 10, fechada);
+eq('parcela futura acima do piso não é tocada', r.mes, '2027-01');
+
+// SHOPEE 02/02 chegou datada 30/11 (não no vencimento) e a AGENDADA a punha
+// em novembro. Sem billId e PENDING com novembro fechado, é dezembro.
+{
+  // O sandbox tem o próprio Date: congelar o "hoje" é lá dentro.
+  const DateSb = vm.runInContext('Date', sandbox);
+  const real = DateSb.now;
+  DateSb.now = () => agoraNov.getTime();
+  try {
+    r = dm({ date: '2026-11-30T00:00:00Z', status: 'PENDING',
+             creditCardMetadata: { totalInstallments: 2, installmentNumber: 2 } }, {}, 3, 10, fechada);
+  } finally { DateSb.now = real; }
+  ok('  (a data no futuro a fazia AGENDADA antes do piso)', true);
+  eq('SHOPEE 02/02 datada 30/11 → dezembro', r.mes, '2026-12');
+}
+
 // ── 5c. Natureza da transação ───────────────────────────────────────────────
 console.log('\n=== 5c. _tipoTransacao (o banco não soma o pagamento) ===');
 const tt = sandbox._tipoTransacao;

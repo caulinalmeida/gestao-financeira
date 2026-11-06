@@ -62,6 +62,7 @@ function investigarFaturaSumida() {
       });
       var diaFech = _diaFechamento(cd, faturas);
       var diaVenc = _diaVencimento(cd, faturas);
+      var mesFechada = _mesUltimaFechada(faturas);
 
       p('════════════════════════════════════════════════════');
       p('💳 ' + (c.name || c.marketingName || c.id) +
@@ -101,7 +102,7 @@ function investigarFaturaSumida() {
       var linhas = [];
 
       txs.forEach(function (tx) {
-        var m = _derivarMes(tx, mapaFaturas, diaFech, diaVenc);
+        var m = _derivarMes(tx, mapaFaturas, diaFech, diaVenc, mesFechada);
         var dataIso = _isoData(new Date(tx.date));
         var meta = tx.creditCardMetadata || {};
         var existe = naPlanilha[String(tx.id)];

@@ -124,6 +124,8 @@ Precedência, verificada contra dados reais do Itaú (fecha dia 3, vence dia 10)
 3. **CICLO** — compra normal, calculada pelo dia de fechamento. Compra **no** dia do fechamento já cai na fatura seguinte (`>=`, não `>`).
 4. **FORECAST/ESTIMADO** — último recurso.
 
+**Por cima de 2–4, o piso ABERTA.** Se a fatura do mês já **fechou** (está no `/bills`, que só lista fechada) e a transação segue `PENDING` sem `billId`, ela não está naquela fatura — vai para a seguinte, `origem_mes = ABERTA`. Não depende de data: o banco aloca pela data de **processamento**, então perto do fechamento a data da compra mente. Caso real, nov/2026: `99Food` de 02/11 (feriado) e `SHOPEE 02/02` datada 30/11 caíram em dezembro e o CICLO/AGENDADA mandava as duas para novembro. Só vale para `PENDING`: `POSTED` sem `billId` fica onde está, para a conciliação mostrar. Antes de a fatura fechar não há piso, e o ciclo continua sendo a melhor estimativa — por isso compra de 1–2 dias antes do fechamento ainda aparece no mês anterior até o banco fechar, e se corrige sozinha no primeiro sync depois.
+
 `billForecastDate` do Pluggy usa uma convenção de mês **diferente** do `dueDate` — misturar os dois empurra as compras da fatura aberta um mês para trás. Não usar.
 
 ### Conciliação contra o banco
